@@ -1,2 +1,16 @@
+--extra-index-url https://download.pytorch.org/whl/cu116
 gdown==5.2.0
 python-dotenv==1.0.1
+torch==1.12+cu116
+tensorboard
+torchvision
+torchaudio
+torchvision
+opencv-python
+cvbase
+einops
+kornia
+tensorboardX
+matplotlib
+scikit-learn
+numpy<2

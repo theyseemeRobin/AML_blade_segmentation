@@ -3,7 +3,7 @@ import zipfile
 import gdown
 import shutil
 
-def download_data(data_path='data'):
+def download_data(data_path='data/optic_thermal'):
     
     images_path = os.path.join(data_path, 'Images')
     videos_path = os.path.join(data_path, 'Videos')
