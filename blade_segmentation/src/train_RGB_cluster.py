@@ -7,6 +7,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 
 from torch.utils.tensorboard import SummaryWriter
+import wandb
 from argparse import ArgumentParser
 import random
 
@@ -61,6 +62,7 @@ def train_rgb_cluster(args):
         )
         print("Sampler_train = %s" % str(sampler_train))
 
+    wandb.init(project='aml-blade-segmentation', config=args)
     if global_rank == 0 and logPath is not None:
         os.makedirs(logPath, exist_ok=True)
         writer = SummaryWriter(logPath)
@@ -220,10 +222,14 @@ def train_rgb_cluster(args):
                   'slot loss {:.05f}'.format(slot_loss),
                   'motion loss {:.05f}.'.format(float(motion_loss)),
                   'total loss {:.05f}.'.format(float(loss.detach().cpu().numpy())))
+                
                 timestart = time.time()
-                writer.add_scalar('train/total_loss', loss, it)
-                writer.add_scalar('train/slot_loss', slot_loss, it)
-                writer.add_scalar('train/motion_loss', motion_loss, it)
+                # writer.add_scalar('train/total_loss', loss, it)
+                # writer.add_scalar('train/slot_loss', slot_loss, it)
+                # writer.add_scalar('train/motion_loss', motion_loss, it)
+                
+                # Log in wandb too
+                wandb.log({'train/total_loss': loss, 'train/slot_loss': slot_loss, 'train/motion_loss': motion_loss, 'learning_rate': lr_scheduler[it]}, step=it)
 
             if it % save_freq == 0 and it > 0:
                 filename = os.path.join(modelPath, 'checkpoint_{}.pth'.format(it))
@@ -239,9 +245,9 @@ def train_rgb_cluster(args):
 def train_rgb_cluster_parse_args():
     parser = ArgumentParser()
     #optimization
-    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=4e-5)
-    parser.add_argument('--num_train_steps', type=int, default=6e4) #300k
+    parser.add_argument('--num_train_steps', type=int, default=6e4) #60k
     parser.add_argument('--decay_rate', type=float, default=0.5)
     parser.add_argument('--loss_scale', type=float, default=100)
     parser.add_argument('--ent_scale', type=float, default=1.0)

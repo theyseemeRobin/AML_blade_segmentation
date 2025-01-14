@@ -172,3 +172,6 @@ cython_debug/
 
 # Project Specific
 data/
+*.pth
+results/
+wandb/
