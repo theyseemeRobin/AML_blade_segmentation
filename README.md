@@ -17,7 +17,7 @@ DATASET_ID="GOOGLE_DRIVE_FILE_ID"
 ```
 
 This code is based on [SSL-UVOS](https://github.com/shvdiwnkozbw/SSL-UVOS/tree/main). Download the pretrained model 
-[here](https://drive.google.com/file/d/1UhSPueJGpV4di9SVlZDmz0KWkuigQApA/view)
+[here](https://dl.fbaipublicfiles.com/dino/dino_deitsmall8_pretrain/dino_deitsmall8_pretrain_full_checkpoint.pth)
 
 Run the following script from the [blade_segmentation](blade_segmentation) directory:
 
