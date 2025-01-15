@@ -70,10 +70,14 @@ def setup_dataset(args):
 
     elif args.dataset == 'turbines_OT':
         basepath = args.basepath
-        img_dir = basepath + '/Optical'
-        gt_dir = basepath + '/Masks_Optical'                      # NOTE (Robin): Annotations do not exist at the moment
-        val_seq = os.listdir(img_dir)
-        val_data_dir = [img_dir, img_dir, gt_dir]
+        img_dir = basepath + '/train/Optical'
+        gt_dir = basepath + '/train/Masks_Optical'
+        
+        val_gt_dir = basepath + '/val/Masks_Optical'                      # NOTE (Robin): Annotations do not exist at the moment
+        val_img_dir = basepath + '/val/Optical'
+        val_seq = os.listdir(val_img_dir)
+        
+        val_data_dir = [val_img_dir, val_img_dir, gt_dir]
     else:
         raise ValueError('Unknown Setting.')
     
@@ -93,6 +97,7 @@ def setup_dataset(args):
         resolution=resolution,
         gap=args.gap,
         train=False,
+        seq_length=args.num_frames,
         val_seq=val_seq
     )
     in_out_channels = 3

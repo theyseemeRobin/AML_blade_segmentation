@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
+from torch.utils.data import SequentialSampler
 
 from torch.utils.tensorboard import SummaryWriter
 import wandb
@@ -68,13 +69,6 @@ def train_rgb_cluster(args):
         config=args,
         mode='online' if args.wandb_online else 'offline'
     )
-    
-    # Old tensorboard writer
-    # if global_rank == 0 and logPath is not None:
-    #     os.makedirs(logPath, exist_ok=True)
-    #     writer = SummaryWriter(logPath)
-    # else:
-    #     writer = None
 
     trn_loader = ut.FastDataLoader(
         trn_dataset,
@@ -150,8 +144,8 @@ def train_rgb_cluster(args):
     for name, p in model.encoder.named_parameters():
         p.requires_grad = False
 
-    log_freq = 500
-    save_freq = 1000
+    log_freq = 200
+    save_freq = 2000
 
     print('======> start training {}, {}, use {}.'.format(args.dataset, args.verbose, device))
     grad_step = 1
@@ -178,7 +172,8 @@ def train_rgb_cluster(args):
             
             _, _, motion_mask, slot, _ = model(aug_gpu(rgb), training=True)
 
-            loss, slot_loss, motion_loss = compute_total_loss(slot, motion_mask, num_frames, grad_step)
+            slot_loss, motion_loss = compute_total_loss(slot, motion_mask, num_frames)
+            loss = (slot_loss + motion_loss) / grad_step 
             
             loss.backward()
 
@@ -195,11 +190,8 @@ def train_rgb_cluster(args):
                   'total loss {:.05f}.'.format(float(loss.detach().cpu().numpy())))
                 
                 timestart = time.time()
-                # writer.add_scalar('train/total_loss', loss, it)
-                # writer.add_scalar('train/slot_loss', slot_loss, it)
-                # writer.add_scalar('train/motion_loss', motion_loss, it)
                 
-                # Log in wandb too
+                # Log in wandb
                 wandb.log({'train/total_loss': loss, 'train/slot_loss': slot_loss, 'train/motion_loss': motion_loss, 'learning_rate': lr_scheduler[it]}, step=it)
 
             if it % save_freq == 0 and it > 0:
@@ -210,8 +202,18 @@ def train_rgb_cluster(args):
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': loss,
                     }, filename)
+                
+            if it % args.eval_freq == 0 and it > 0:   
+                pass 
+            
             it += 1
 
+def evaluate_model(model, val_loader, aug_gpu, device, num_frames, grad_step):
+    model.eval()
+    
+    # What would we even do here since this is an unsupervised task?
+    
+    pass
 
 def compute_slot_attention(slot, motion_mask, num_frames, num_points):
     sample = torch.randperm(motion_mask.shape[2]//num_frames)[:num_points]
@@ -271,7 +273,7 @@ def compute_motion_loss(motion_weight, motion_vector, motion_pool, motion_index,
     motion_loss = F.relu(neg_sim.unsqueeze(-1)-pos_sim.unsqueeze(-2)+1)
     return torch.einsum('btn,btnpq->btpq', query_score, motion_loss).mean()
 
-def compute_total_loss(slot, motion_mask, num_frames, grad_step):
+def compute_total_loss(slot, motion_mask, num_frames):
     num_points = 8
     sample, slot_pool, slot_index = compute_slot_attention(slot, motion_mask, num_frames, num_points)
     slot_loss = compute_slot_similarities(slot_pool, slot_index, slot, sample)
@@ -284,7 +286,7 @@ def compute_total_loss(slot, motion_mask, num_frames, grad_step):
     motion_params = compute_motion_attention(attention, motion_mask, attn_index, num_frames, num_points, sample)
     motion_loss = compute_motion_loss(*motion_params, sample)
     
-    return (slot_loss + motion_loss) / grad_step, slot_loss, motion_loss
+    return slot_loss, motion_loss
 
 
 def train_rgb_cluster_parse_args():

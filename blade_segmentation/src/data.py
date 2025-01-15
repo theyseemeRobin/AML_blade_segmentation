@@ -49,7 +49,7 @@ class Dataloader(Dataset):
 
     def __len__(self):
         if self.train:
-            return 10000
+            return 10000 # What?
         else:
             return len(self.seq)
 
@@ -98,6 +98,9 @@ class Dataloader(Dataset):
                 rgb_dirs = [os.path.join(self.data_dir[1], seq_name, str(i).zfill(5)+'.jpg') for i in range(tot-1)]
                 gt_dirs = [os.path.join(self.data_dir[2], seq_name, str(i).zfill(5)+'.png') for i in range(tot-1)]
                 rgbs = np.stack([readRGB(rgb_dir, self.resolution) for rgb_dir in rgb_dirs], axis=0)
-                gts = np.stack([readSeg(gt_dir) for gt_dir in gt_dirs], axis=0)
+                
+                gts = None
+                if self.dataset != 'turbines_OT': # Workaround for now
+                    gts = np.stack([readSeg(gt_dir) for gt_dir in gt_dirs], axis=0)
                 return rgbs, gts, seq_name, [i for i in range(tot-1)]
                 

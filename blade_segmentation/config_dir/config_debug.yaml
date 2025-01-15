@@ -8,6 +8,9 @@ ent_scale: 1.0
 cons_scale: 1.0
 grad_iter: 0
 
+# Eval settings
+eval_freq: 1000
+
 # Dataset settings
 dataset: turbines_OT
 with_rgb: false
