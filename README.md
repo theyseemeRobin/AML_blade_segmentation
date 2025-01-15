@@ -22,11 +22,7 @@ This code is based on [SSL-UVOS](https://github.com/shvdiwnkozbw/SSL-UVOS/tree/m
 Run the following script from the [blade_segmentation](blade_segmentation) directory:
 
 ```bash
-python train.py --basepath data/optic_thermal/Images/trainval \
---batch_size 1 \
---grad_iter 0 \
---lr 1e-5 \
---output_path results \
---dino_path models/dino_deitsmall8_pretrain_full_checkpoint.pth \
---dataset turbines_OT
+python train.py --config-name config.yaml
 ```
+
+Update the desired config file as needed.

@@ -1,14 +1,17 @@
 from src.train_RGB_cluster import train_rgb_cluster, train_rgb_cluster_parse_args
 from src.file_handler import download_data
+from omegaconf import DictConfig
+from argparse import Namespace
 from dotenv import load_dotenv
+import hydra
 
-
-def main(args):
+@hydra.main(version_base=None, config_path="config_dir", config_name="config")
+def main(cfg: DictConfig):
     download_data()
+    args = Namespace(**cfg)
     train_rgb_cluster(args)
 
 
 if __name__ == '__main__':
     load_dotenv(dotenv_path='../.env')
-    args = train_rgb_cluster_parse_args()
-    main(args)
+    main()

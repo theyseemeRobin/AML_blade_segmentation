@@ -1,0 +1,32 @@
+# Training parameters
+batch_size: 1
+lr: 1e-5
+num_train_steps: 20000  # 60k
+decay_rate: 0.5
+loss_scale: 100
+ent_scale: 1.0
+cons_scale: 1.0
+grad_iter: 0
+
+# Dataset settings
+dataset: turbines_OT
+with_rgb: false
+num_frames: 3
+num_t: 1
+gap: 2
+
+# Model paths
+basepath: data/optic_thermal/Images/test-dev
+output_path: results
+dino_path: models/dino_deitsmall8_pretrain_full_checkpoint.pth
+resume_path: null
+
+# System settings
+seed: 0
+verbose: null
+device: cuda
+world_size: 1
+local_rank: -1
+dist_on_itp: false
+dist_url: env://
+wandb_online: true

@@ -12,6 +12,7 @@ from argparse import ArgumentParser
 import random
 
 from src.utils import save_on_master, Augment_GPU_pre
+from tqdm import tqdm
 import src.utils as ut
 import src.config as cg
 from src.model.model_cluster import AttEncoder
@@ -62,12 +63,18 @@ def train_rgb_cluster(args):
         )
         print("Sampler_train = %s" % str(sampler_train))
 
-    wandb.init(project='aml-blade-segmentation', config=args)
-    if global_rank == 0 and logPath is not None:
-        os.makedirs(logPath, exist_ok=True)
-        writer = SummaryWriter(logPath)
-    else:
-        writer = None
+    wandb.init(
+        project='aml-blade-segmentation',
+        config=args,
+        mode='online' if args.wandb_online else 'offline'
+    )
+    
+    # Old tensorboard writer
+    # if global_rank == 0 and logPath is not None:
+    #     os.makedirs(logPath, exist_ok=True)
+    #     writer = SummaryWriter(logPath)
+    # else:
+    #     writer = None
 
     trn_loader = ut.FastDataLoader(
         trn_dataset,
@@ -124,6 +131,7 @@ def train_rgb_cluster(args):
         schedule = np.concatenate((warmup_schedule, schedule))
         assert len(schedule) == epochs * niter_per_ep
         return schedule
+    
     lr_scheduler = cosine_scheduler(lr, 1e-6, num_it//len(trn_loader), len(trn_loader), 0)
     wd_scheduler = cosine_scheduler(0.1, 0.1, num_it//len(trn_loader), len(trn_loader))
     
@@ -142,7 +150,7 @@ def train_rgb_cluster(args):
     for name, p in model.encoder.named_parameters():
         p.requires_grad = False
 
-    log_freq = 100
+    log_freq = 500
     save_freq = 1000
 
     print('======> start training {}, {}, use {}.'.format(args.dataset, args.verbose, device))
@@ -153,7 +161,7 @@ def train_rgb_cluster(args):
     while it < num_it:
         if args.distributed:
             trn_loader.sampler.set_epoch(it//iter_per_epoch)
-        for _, sample in enumerate(trn_loader):
+        for sample in tqdm(trn_loader):
             for i, param_group in enumerate(optimizer.param_groups):
                 if i < 2:
                     weight = 0.0 if it < grad_iter else 0.1
@@ -215,7 +223,7 @@ def train_rgb_cluster(args):
                 optimizer.step()
                 optimizer.zero_grad()
 
-            if it % log_freq == 0 and writer is not None:
+            if it % log_freq == 0:
                 print('iteration {},'.format(it),
                   'time {:.01f}s,'.format(time.time() - timestart),
                   'learning rate {:.05f}'.format(lr_scheduler[it]),
