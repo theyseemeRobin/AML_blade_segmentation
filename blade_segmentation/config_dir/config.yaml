@@ -1,15 +1,17 @@
 # Training parameters
-batch_size: 1
+batch_size: 2
 lr: 1e-5
-num_train_steps: 20000  # 60k
+num_epochs: 1000
 decay_rate: 0.5
 loss_scale: 100
 ent_scale: 1.0
 cons_scale: 1.0
 grad_iter: 0
 
-# Eval settings
-eval_freq: 1000
+# Log settings
+log_freq: 10
+eval_freq: 50
+save_freq: 200
 
 # Dataset settings
 dataset: turbines_OT
@@ -19,7 +21,7 @@ num_t: 1
 gap: 2
 
 # Model paths
-basepath: data/optic_thermal/Images/test-dev
+basepath: data/optic_thermal/Images/trainval
 output_path: results
 dino_path: models/dino_deitsmall8_pretrain_full_checkpoint.pth
 resume_path: null

@@ -1,15 +1,17 @@
 # Training parameters
-batch_size: 1
+batch_size: 2
 lr: 1e-5
-num_train_steps: 10000  # Can't be lower than the size of the dataset
+num_epochs: 100
 decay_rate: 0.5
 loss_scale: 100
 ent_scale: 1.0
 cons_scale: 1.0
 grad_iter: 0
 
-# Eval settings
-eval_freq: 1000
+# Log settings
+log_freq: 1
+eval_freq: 10
+save_freq: 100
 
 # Dataset settings
 dataset: turbines_OT

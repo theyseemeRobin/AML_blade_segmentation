@@ -38,7 +38,6 @@ def train_rgb_cluster(args):
     print(f"world_size:{ut.get_world_size()}")
     lr = args.lr
     batch_size = args.batch_size
-    num_it = int(args.num_train_steps)
     resume_path = args.resume_path
     num_t = args.num_t
     dino_path = args.dino_path
@@ -76,7 +75,7 @@ def train_rgb_cluster(args):
         num_workers=8,
         batch_size=batch_size,
         pin_memory=True,
-        drop_last=True,
+        drop_last=False, # We have too few samples to drop any
         multiprocessing_context=None                   # NOTE (Robin): "fork" did not work so I set it to default (None)
     )
         
@@ -126,8 +125,8 @@ def train_rgb_cluster(args):
         assert len(schedule) == epochs * niter_per_ep
         return schedule
     
-    lr_scheduler = cosine_scheduler(lr, 1e-6, num_it//len(trn_loader), len(trn_loader), 0)
-    wd_scheduler = cosine_scheduler(0.1, 0.1, num_it//len(trn_loader), len(trn_loader))
+    lr_scheduler = cosine_scheduler(lr, 1e-6, args.num_epochs, len(trn_loader), 0)
+    wd_scheduler = cosine_scheduler(0.1, 0.1, args.num_epochs, len(trn_loader))
     
     if resume_path:
         print('resuming from checkpoint')
@@ -144,18 +143,22 @@ def train_rgb_cluster(args):
     for name, p in model.encoder.named_parameters():
         p.requires_grad = False
 
-    log_freq = 200
-    save_freq = 2000
-
     print('======> start training {}, {}, use {}.'.format(args.dataset, args.verbose, device))
     grad_step = 1
     timestart = time.time()
     iter_per_epoch = int(10000 // (num_tasks * args.batch_size))
     
-    while it < num_it:
+    for epoch in tqdm(range(args.num_epochs), desc='epochs'):
+        
+        losses = {
+            'total_loss': 0,
+            'slot_loss': 0,
+            'motion_loss': 0,
+        }
+        
         if args.distributed:
             trn_loader.sampler.set_epoch(it//iter_per_epoch)
-        for sample in tqdm(trn_loader):
+        for sample in trn_loader:
             for i, param_group in enumerate(optimizer.param_groups):
                 if i < 2:
                     weight = 0.0 if it < grad_iter else 0.1
@@ -176,37 +179,59 @@ def train_rgb_cluster(args):
             loss = (slot_loss + motion_loss) / grad_step 
             
             loss.backward()
+            
+            losses['total_loss'] += loss.detach().cpu().numpy()
+            losses['slot_loss'] += slot_loss.detach().cpu().numpy()
+            losses['motion_loss'] += motion_loss.detach().cpu().numpy()
 
-            if (it+1) % grad_step  == 0:
+            if (it+1) % grad_step == 0:
                 optimizer.step()
                 optimizer.zero_grad()
-
-            if it % log_freq == 0:
-                print('iteration {},'.format(it),
-                  'time {:.01f}s,'.format(time.time() - timestart),
-                  'learning rate {:.05f}'.format(lr_scheduler[it]),
-                  'slot loss {:.05f}'.format(slot_loss),
-                  'motion loss {:.05f}.'.format(float(motion_loss)),
-                  'total loss {:.05f}.'.format(float(loss.detach().cpu().numpy())))
                 
-                timestart = time.time()
-                
-                # Log in wandb
-                wandb.log({'train/total_loss': loss, 'train/slot_loss': slot_loss, 'train/motion_loss': motion_loss, 'learning_rate': lr_scheduler[it]}, step=it)
-
-            if it % save_freq == 0 and it > 0:
-                filename = os.path.join(modelPath, 'checkpoint_{}.pth'.format(it))
-                save_on_master({
-                    'iteration': it,
-                    'model_state_dict': model_without_ddp.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss,
-                    }, filename)
-                
-            if it % args.eval_freq == 0 and it > 0:   
-                pass 
-            
             it += 1
+            
+        # Normalize the losses
+        for key in losses:
+            losses[key] /= len(trn_loader)
+
+        if epoch % args.log_freq == 0:
+            # print('epoch {},'.format(epoch),
+            #     'time {:.01f}s,'.format(time.time() - timestart),
+            #     'learning rate {:.05f}'.format(lr_scheduler[it]),
+            #     'slot loss {:.05f}'.format(slot_loss),
+            #     'motion loss {:.05f}.'.format(float(motion_loss)),
+            #     'total loss {:.05f}.'.format(float(loss.detach().cpu().numpy())))
+            
+            timestart = time.time()
+            
+            # Log in wandb
+            wandb.log(
+                {'train/total_loss': losses['total_loss'],
+                 'train/slot_loss': losses['slot_loss'],
+                 'train/motion_loss': losses['motion_loss'],
+                 'learning_rate': lr_scheduler[it]},
+                step=epoch)
+
+        if epoch % args.save_freq == 0 and it > 0:
+            filename = os.path.join(modelPath, 'checkpoint_{}.pth'.format(it))
+            save_on_master({
+                'epoch': it,
+                'model_state_dict': model_without_ddp.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+                }, filename)
+            
+        if epoch % args.eval_freq == 0 and it > 0:   
+            pass 
+    
+    # Save the final model
+    filename = os.path.join(modelPath, 'checkpoint_final.pth')
+    save_on_master({
+        'iteration': it,
+        'model_state_dict': model_without_ddp.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss': loss,
+        }, filename)
 
 def evaluate_model(model, val_loader, aug_gpu, device, num_frames, grad_step):
     model.eval()

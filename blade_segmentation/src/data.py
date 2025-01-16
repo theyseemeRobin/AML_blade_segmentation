@@ -48,9 +48,9 @@ class Dataloader(Dataset):
             self.seq = val_seq
 
     def __len__(self):
-        if self.train:
-            return 10000 # What?
-        else:
+        # if self.train:
+        #     return 10000 # What?
+        # else:
             return len(self.seq)
 
     def __getitem__(self, idx):
