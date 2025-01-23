@@ -25,4 +25,9 @@ Run the following script from the [blade_segmentation](blade_segmentation) direc
 python train.py --config-name config.yaml
 ```
 
-Update the desired config file as needed.
+Update the desired config file as needed. For hyperparameter tuning, hydra's sweeper can be used. To use the sweeper
+configuration in a config file for hyperparameter tuning, the train script should be executed with a `--multirun` flag:
+```bash
+python train.py --config-name config.yaml --multirun
+```
+

@@ -15,5 +15,6 @@ matplotlib
 scikit-learn
 numpy<2
 hydra-core
+hydra-optuna-sweeper
 omegaconf
 wandb
