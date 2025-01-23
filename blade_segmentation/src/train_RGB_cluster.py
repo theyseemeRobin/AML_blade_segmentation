@@ -209,7 +209,8 @@ def train_rgb_cluster(args):
                 {'train/total_loss': losses['total_loss'],
                  'train/slot_loss': losses['slot_loss'],
                  'train/motion_loss': losses['motion_loss'],
-                 'learning_rate': lr_scheduler[it]},
+                 # it-1 because the scheduler is updated at the end of the iteration, so `it-1` matches the lr used
+                 'learning_rate': lr_scheduler[it - 1]},
                 step=epoch)
 
         if epoch % args.save_freq == 0 and it > 0:
