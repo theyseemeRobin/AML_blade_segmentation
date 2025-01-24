@@ -207,7 +207,7 @@ def train_rgb_cluster(args):
         for key in losses:
             losses[key] /= len(trn_loader)
 
-        if epoch % args.log_freq == 0:
+        if (epoch % args.log_freq == 0 or epoch == args.num_epochs - 1):
             # print('epoch {},'.format(epoch),
             #     'time {:.01f}s,'.format(time.time() - timestart),
             #     'learning rate {:.05f}'.format(lr_scheduler[it]),
@@ -236,7 +236,7 @@ def train_rgb_cluster(args):
                 }, filename)
         
         # Evaluate the model, logs results to wandb
-        if epoch % args.eval_freq == 0 and epoch > 0:   
+        if (epoch % args.eval_freq == 0 and epoch > 0) or epoch == args.num_epochs - 1:   
             
             # Free memory before evaluation
             torch.cuda.empty_cache()
@@ -247,7 +247,7 @@ def train_rgb_cluster(args):
             # Garbage collection
             gc.collect()
             
-            eval(val_loader, model, device, args.ratio, args.tau, save_path=resultsPath, train=True)
+            eval(val_loader, model, device, args, save_path=resultsPath, train=True)
     
     # Save the final model
     filename = os.path.join(modelPath, 'checkpoint_final.pth')

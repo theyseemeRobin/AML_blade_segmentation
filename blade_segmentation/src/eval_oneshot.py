@@ -187,7 +187,10 @@ def inference(masks_collection, rgbs, gts, model, T, ratio, tau, device):
         masks_collection[i].append(mask[i])
     return masks_collection
 
-def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, device):
+def mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device):
+    
+    ratio = args.ratio
+    
     bs = 1
     feats = []
     ## extract frame-wise dino features
@@ -217,7 +220,7 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     t2 = time.time()
     
     # Replace hierarchical_cluster with k-means clustering
-    dist = faiss_kmeans_cluster(q, k, scale, num_clusters=3, device=device) # Use FAISS GPU K-means 
+    dist = faiss_kmeans_cluster(q, k, scale, args, device=device) # Use FAISS GPU K-means 
     
     dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
     mask = dist.unsqueeze(1)
@@ -228,7 +231,11 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     print('Total time:', t3-t1)
     return masks_collection
 
-def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_size=1):
+def faiss_kmeans_cluster(q, k_in, scale, args, device='cuda'):
+    
+    num_clusters = args.num_clusters
+    chunk_size = args.chunk_size
+    
     batch_size = q.shape[0]
     seq_len = q.shape[2]
     total_len = batch_size * seq_len
@@ -243,7 +250,7 @@ def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_si
     d = sample.shape[1]
     
     # Initialize FAISS kmeans once
-    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=25, verbose=False, gpu=False)
+    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=200, verbose=False, gpu=False)
     kmeans.train(sample.cpu().numpy().astype('float32'))
     
     # Process chunks
@@ -272,7 +279,8 @@ def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_si
 
     return final_mask
 
-def eval(val_loader, model, device, ratio, tau, save_path=None, writer=None, train=False):
+def eval(val_loader, model, device, args, save_path=None, writer=None, train=False):
+    
     with torch.no_grad():
         t = time.time()
         model.eval()
@@ -305,7 +313,7 @@ def eval(val_loader, model, device, ratio, tau, save_path=None, writer=None, tra
             masks_collection = {}
             for i in range(T):
                 masks_collection[i] = []
-            masks_collection = mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, device)
+            masks_collection = mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device)
             torch.save(masks_collection, save_path+'/%s.pth' % category[0])
             
             # --- New code for video creation ---

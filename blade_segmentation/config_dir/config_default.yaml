@@ -14,6 +14,9 @@ grad_iter: 0
 # Evaluation parameters
 ratio: 10
 tau: 1.0
+chunk_size: 1 # How many frames to process at once
+num_clusters: 16
+
 # It seems like different values are used between training and evaluation
 attn_drop_t: 0.4
 path_drop: 0.2
