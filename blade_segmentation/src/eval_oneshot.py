@@ -207,7 +207,7 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     feats = model.temporal_transformer[0].norm1(feats) # t hw c
     qkv = model.temporal_transformer[0].attn.qkv(feats)
     qkv = qkv.reshape(T, H*W, 3, num_heads, C // num_heads).permute(2, 0, 3, 1, 4) # 3 t h hw c
-    q, k, _ = qkv.cpu().unbind(0) # t h hw c
+    q, k, _ = qkv.unbind(0) # t h hw c # Originally put on CPU
     key_indices = torch.arange(T//ratio) * ratio # sparse sampling the keys with a sparsity ratio
     k = k[key_indices]
     scale = model.temporal_transformer[0].attn.scale
@@ -216,7 +216,7 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     t2 = time.time()
     
     # Replace hierarchical_cluster with k-means clustering
-    dist = mem_efficient_faiss_kmeans_cluster_gpu(q, k, scale, num_clusters=8, device=device) # Use FAISS GPU K-means 
+    dist = faiss_kmeans_cluster(q, k, scale, num_clusters=8, device=device) # Use FAISS GPU K-means 
     
     dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
     mask = dist.unsqueeze(1)
@@ -227,37 +227,48 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     print('Total time:', t3-t1)
     return masks_collection
 
-def mem_efficient_faiss_kmeans_cluster_gpu(q, k_in, scale, num_clusters=8, device='cuda'):
-    ts = 3
-    final_mask = torch.zeros(num_clusters, q.shape[0]*q.shape[2]).to(q.device)
+def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_size=2):
+    batch_size = q.shape[0]
+    seq_len = q.shape[2]
+    total_len = batch_size * seq_len
+    final_mask = torch.zeros(num_clusters, total_len, device=q.device)
 
-    # Get dimensions from first batch
-    attn = torch.einsum('qhnc,khmc->qkhnm', q[0:ts], k_in) * scale
+    # Process first chunk to get dimensions
+    q_chunk = q[0:1]
+    attn = torch.einsum('qhnc,khmc->qkhnm', q_chunk, k_in) * scale
     attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
     attn = attn.softmax(dim=-1)
     sample = attn.mean(dim=1)
-    sample_np = sample.cpu().numpy().astype('float32')
-    d = sample_np.shape[1]
-
-    # Initialize FAISS KMeans once
-    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=20, verbose=False, gpu=True)
-    print('sample shape:', sample_np.shape)
-
-    for t in tqdm(range(0, q.shape[0], ts), desc='FAISS GPU K-means clustering'):
-        attn = torch.einsum('qhnc,khmc->qkhnm', q[t:t+ts], k_in) * scale
+    d = sample.shape[1]
+    
+    # Initialize FAISS kmeans once
+    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=10, verbose=False, gpu=True)
+    kmeans.train(sample.cpu().numpy().astype('float32'))
+    
+    # Process chunks
+    for t in tqdm(range(0, batch_size, chunk_size)):
+        # Process chunk
+        q_chunk = q[t:t+chunk_size]
+        attn = torch.einsum('qhnc,khmc->qkhnm', q_chunk, k_in) * scale
         attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
         attn = attn.softmax(dim=-1)
         sample = attn.mean(dim=1)
+        
+        # Get cluster assignments for chunk
         sample_np = sample.cpu().numpy().astype('float32')
+        _, chunk_labels = kmeans.index.search(sample_np, 1)
+        
+        # Update mask for this chunk
+        start_idx = t * seq_len
+        end_idx = min((t + chunk_size) * seq_len, total_len)
+        chunk_labels_torch = torch.from_numpy(chunk_labels.reshape(-1)).to(q.device)
+        chunk_indices = torch.arange(start_idx, end_idx, device=q.device)
+        final_mask[chunk_labels_torch, chunk_indices] = 1
+        
+        # Clean up
+        torch.cuda.empty_cache()
+        del q_chunk, attn, sample, sample_np, chunk_labels
 
-        kmeans.train(sample_np)  # Train on current batch
-        _, cluster_labels_np = kmeans.index.search(sample_np, 1)
-        cluster_labels_torch = torch.from_numpy(cluster_labels_np.reshape(-1)).to(q.device)
-
-        for i in range(num_clusters):
-            final_mask[i, t*q.shape[2]:(t+ts)*q.shape[2]][cluster_labels_torch==i] = 1
-
-    print('cluster centroids:', num_clusters)
     return final_mask
 
 def eval(val_loader, model, device, ratio, tau, save_path=None, writer=None, train=False):
