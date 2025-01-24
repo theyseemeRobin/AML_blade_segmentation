@@ -17,7 +17,7 @@ from tqdm import tqdm
 import src.utils as ut
 import src.config as cg
 from src.model.model_cluster import AttEncoder
-# from src.eval_oneshot import eval
+from src.eval_oneshot import eval
 
 
 def train_rgb_cluster(args):

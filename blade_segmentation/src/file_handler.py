@@ -99,7 +99,7 @@ def create_train_val_set(data_path='data/optic_thermal'):
             
 def download_masks(data_path='data/optic_thermal'):
     
-    masks_path = os.path.join(data_path, 'Images/test-dev/Optical_Masks')
+    masks_path = os.path.join(data_path, 'Images/test-dev/Masks_Optical')
     
     # If the Masks folder already exists, return
     if os.path.exists(masks_path):

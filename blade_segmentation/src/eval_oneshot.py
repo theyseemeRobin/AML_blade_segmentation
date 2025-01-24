@@ -4,15 +4,17 @@ import einops
 import sys
 import cv2
 import numpy as np
-import utils as ut
-import config as cg
+
+import src.utils as ut
+import src.config as cg
+from src.model.model_cluster import AttEncoder
+
 import torch
 import torchvision
 import torch.nn as nn
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 from argparse import ArgumentParser
-from model.model_cluster import AttEncoder
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import kornia

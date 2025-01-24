@@ -18,3 +18,7 @@ hydra-core
 hydra-optuna-sweeper
 omegaconf
 wandb
+pyparsing
+cycler
+kiwisolver
+scikit-learn
