@@ -19,6 +19,9 @@ import src.config as cg
 from src.model.model_cluster import AttEncoder
 from src.eval_oneshot import eval
 
+# Set matmul precision to medium
+torch.set_float32_matmul_precision('medium')
+
 
 def train_rgb_cluster(args):
     ut.init_distributed_mode(args)

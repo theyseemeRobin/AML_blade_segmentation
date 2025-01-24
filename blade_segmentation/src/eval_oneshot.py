@@ -227,7 +227,7 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     print('Total time:', t3-t1)
     return masks_collection
 
-def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_size=2):
+def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_size=1):
     batch_size = q.shape[0]
     seq_len = q.shape[2]
     total_len = batch_size * seq_len
@@ -242,7 +242,7 @@ def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_si
     d = sample.shape[1]
     
     # Initialize FAISS kmeans once
-    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=10, verbose=False, gpu=True)
+    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=10, verbose=False, gpu=False)
     kmeans.train(sample.cpu().numpy().astype('float32'))
     
     # Process chunks
