@@ -10,7 +10,7 @@ eval_freq: 10
 save_freq: 100
 
 # Model paths
-basepath: data/optic_thermal/Images/test-dev
+basepath: data/optic_thermal/Images/trainval
 output_path: results
 
 # System settings

@@ -58,7 +58,7 @@ def create_train_val_set(data_path='data/optic_thermal'):
         print('Train and Val folders already exist.')
         return
     
-    for main_folder in ['test-dev', 'trainval']:
+    for main_folder in ['trainval']:
         for modality in ['Optical', 'Thermal']:
             
             # Source paths

@@ -210,7 +210,7 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
 
     ## clustering on the spatio-temporal attention maps and produce segmentation for the whole video
     t2 = time.time()
-    dist = hierarchical_cluster(q, k, scale, tau=tau, num_iter=10000, device=device)
+    dist = mem_efficient_hierarchical_cluster(q, k, scale, tau=tau, num_iter=10000, device=device)
     dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
     mask = dist.unsqueeze(1)
     for i in range(T):

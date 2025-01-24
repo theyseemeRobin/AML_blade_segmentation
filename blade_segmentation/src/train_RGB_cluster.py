@@ -17,6 +17,7 @@ from tqdm import tqdm
 import src.utils as ut
 import src.config as cg
 from src.model.model_cluster import AttEncoder
+from src.eval_oneshot import eval
 
 
 def train_rgb_cluster(args):
@@ -233,13 +234,6 @@ def train_rgb_cluster(args):
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': loss,
         }, filename)
-
-def evaluate_model(model, val_loader, aug_gpu, device, num_frames, grad_step):
-    model.eval()
-    
-    # What would we even do here since this is an unsupervised task?
-    
-    pass
 
 def compute_slot_attention(slot, motion_mask, num_frames, num_points):
     sample = torch.randperm(motion_mask.shape[2]//num_frames)[:num_points]
