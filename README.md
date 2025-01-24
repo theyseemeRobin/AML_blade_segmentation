@@ -8,12 +8,13 @@ Install the required packages
 pip install -r requirements.txt
 ```
 
-Setup .env file with the following content
+Setup .env file with the following content in the root directory:
 
 ```bash
 # .env
 DATASET_ID="GOOGLE_DRIVE_FILE_ID"
-# More to come soon
+WANDB_API_KEY="Your WANDB API key"
+WANDB_ENTITY=aml-blade-segmentation
 ```
 
 This code is based on [SSL-UVOS](https://github.com/shvdiwnkozbw/SSL-UVOS/tree/main). Download the pretrained model 
