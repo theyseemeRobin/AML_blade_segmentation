@@ -54,7 +54,7 @@ def create_train_val_set(data_path='data/optic_thermal'):
     }
     
     # If folders already exist, return
-    if os.path.exists(os.path.join(images_path, 'test-dev', 'train')):
+    if os.path.exists(os.path.join(images_path, 'trainval', 'train')):
         print('Train and Val folders already exist.')
         return
     
