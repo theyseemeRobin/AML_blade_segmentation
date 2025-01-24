@@ -71,13 +71,13 @@ def setup_dataset(args):
     elif args.dataset == 'turbines_OT':
         basepath = args.basepath
         img_dir = basepath + '/train/Optical'
-        gt_dir = basepath + '/train/Masks_Optical'
+        gt_dir = basepath + '/train/Masks_Optical' # This does not exist
         
         val_gt_dir = basepath + '/val/Masks_Optical'                      # NOTE (Robin): Annotations do not exist at the moment
         val_img_dir = basepath + '/val/Optical'
         val_seq = os.listdir(val_img_dir)
         
-        val_data_dir = [val_img_dir, val_img_dir, gt_dir]
+        val_data_dir = [val_img_dir, val_img_dir, val_gt_dir]
     else:
         raise ValueError('Unknown Setting.')
     

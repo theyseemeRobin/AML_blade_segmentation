@@ -7,8 +7,8 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 from torch.utils.data import SequentialSampler
 
-from torch.utils.tensorboard import SummaryWriter
 import wandb
+import gc
 from argparse import ArgumentParser
 import random
 
@@ -51,7 +51,7 @@ def train_rgb_cluster(args):
     logPath, modelPath, resultsPath = cg.setup_path(args)
     print(logPath)
 
-    trn_dataset, _, resolution, _ = cg.setup_dataset(args)
+    trn_dataset, val_dataset, resolution, _ = cg.setup_dataset(args)
     
     if True:  # args.distributed:
         num_tasks = ut.get_world_size()
@@ -78,6 +78,15 @@ def train_rgb_cluster(args):
         pin_memory=True,
         drop_last=False, # We have too few samples to drop any
         multiprocessing_context=None                   # NOTE (Robin): "fork" did not work so I set it to default (None)
+    )
+    
+    val_loader = ut.FastDataLoader(
+        val_dataset, 
+        num_workers=1, 
+        batch_size=1, # For stability 
+        shuffle=False, 
+        pin_memory=True, 
+        drop_last=False
     )
         
     model = AttEncoder(resolution=resolution, num_t=num_t, num_frames=num_frames, dino_path=dino_path)
@@ -222,9 +231,20 @@ def train_rgb_cluster(args):
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
                 }, filename)
+        
+        # Evaluate the model, logs results to wandb
+        if epoch % args.eval_freq == 0 and epoch > 0:   
             
-        if epoch % args.eval_freq == 0 and it > 0:   
-            pass 
+            # Free memory before evaluation
+            torch.cuda.empty_cache()
+            
+            # Delete out of scope variables
+            del slot, motion_mask, rgb, slot_loss, motion_loss
+            
+            # Garbage collection
+            gc.collect()
+            
+            eval(val_loader, model, device, args.ratio, args.tau, save_path=resultsPath, train=True)
     
     # Save the final model
     filename = os.path.join(modelPath, 'checkpoint_final.pth')

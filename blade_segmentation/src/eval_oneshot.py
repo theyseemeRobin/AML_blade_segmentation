@@ -13,13 +13,14 @@ import torch
 import torchvision
 import torch.nn as nn
 import torch.optim as optim
-from tensorboardX import SummaryWriter
+
 from argparse import ArgumentParser
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import kornia
 from kornia.augmentation.container import VideoSequential
-from sklearn.cluster import SpectralClustering
+import faiss.contrib.torch_utils
+from tqdm import tqdm
 
 def kl_distance(final_set, attn):
     ## kl divergence between two distributions
@@ -87,12 +88,12 @@ def hierarchical_cluster(attn, tau, num_iter, device):
 def mem_efficient_hierarchical_cluster(q, k, scale, tau, num_iter, device):
     # q t head hw c
     # k tk head hw c
-    ts = 3
+    ts = 3 # temporal window size, num_frames?
     bs = 10000
     final_set = []
 
     ## use a temporal window for clustering of the first hierarchy to speed up clustering process
-    for t in range(0, q.shape[0], ts):
+    for t in tqdm(range(0, q.shape[0], ts), desc='clustering on the first hierarchy'):
         attn = torch.einsum('qhnc,khmc->qkhnm', q[t:t+ts], k) * scale
         attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
         attn = attn.softmax(dim=-1)
@@ -117,7 +118,7 @@ def mem_efficient_hierarchical_cluster(q, k, scale, tau, num_iter, device):
     keep_set = final_set
 
     ## clustering on all frames at the following hierarchies until no change
-    for t in range(num_iter):
+    for t in tqdm(range(num_iter), desc='clustering on the following hierarchies'):
         final_set = []
         keep_set = torch.stack(keep_set, dim=0) # K hw
         distance = kl_distance(keep_set, keep_set)
@@ -136,7 +137,7 @@ def mem_efficient_hierarchical_cluster(q, k, scale, tau, num_iter, device):
 
     ## calculate cluster assignments as object segmentation masks
     final_mask = torch.zeros(final_set.shape[0], q.shape[0]*q.shape[2]).to(q.device)
-    for t in range(0, q.shape[0], ts):
+    for t in tqdm(range(0, q.shape[0], ts), desc='calculating cluster assignments'):
         attn = torch.einsum('qhnc,khmc->qkhnm', q[t:t+ts], k) * scale
         attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
         attn = attn.softmax(dim=-1)
@@ -148,11 +149,12 @@ def mem_efficient_hierarchical_cluster(q, k, scale, tau, num_iter, device):
     print('cluster centroids:', final_set.shape)           
     return final_mask
 
+# This apparently takes 300 GB of RAM
 def inference(masks_collection, rgbs, gts, model, T, ratio, tau, device):
     bs = 1
     feats = []
     ## extract frame-wise dino features
-    for i in range(0, T, bs):
+    for i in tqdm(range(0, T, bs), desc='extracting features from frames'):
         input = rgbs[:, i:i+bs]
         input = einops.rearrange(input, 'b t c h w -> (b t) c h w')
         with torch.no_grad():
@@ -189,7 +191,7 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     feats = []
     ## extract frame-wise dino features
     t1 = time.time()
-    for i in range(0, T, bs):
+    for i in tqdm(range(0, T, bs), desc='extracting features from frames'):
         input = rgbs[:, i:i+bs]
         input = einops.rearrange(input, 'b t c h w -> (b t) c h w')
         with torch.no_grad():
@@ -212,7 +214,10 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
 
     ## clustering on the spatio-temporal attention maps and produce segmentation for the whole video
     t2 = time.time()
-    dist = mem_efficient_hierarchical_cluster(q, k, scale, tau=tau, num_iter=10000, device=device)
+    
+    # Replace hierarchical_cluster with k-means clustering
+    dist = mem_efficient_faiss_kmeans_cluster_gpu(q, k, scale, num_clusters=8, device=device) # Use FAISS GPU K-means 
+    
     dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
     mask = dist.unsqueeze(1)
     for i in range(T):
@@ -221,6 +226,39 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     print('Attention map, clustering time:', t2-t1, t3-t2)
     print('Total time:', t3-t1)
     return masks_collection
+
+def mem_efficient_faiss_kmeans_cluster_gpu(q, k_in, scale, num_clusters=8, device='cuda'):
+    ts = 3
+    final_mask = torch.zeros(num_clusters, q.shape[0]*q.shape[2]).to(q.device)
+
+    # Get dimensions from first batch
+    attn = torch.einsum('qhnc,khmc->qkhnm', q[0:ts], k_in) * scale
+    attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
+    attn = attn.softmax(dim=-1)
+    sample = attn.mean(dim=1)
+    sample_np = sample.cpu().numpy().astype('float32')
+    d = sample_np.shape[1]
+
+    # Initialize FAISS KMeans once
+    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=20, verbose=False, gpu=True)
+    print('sample shape:', sample_np.shape)
+
+    for t in tqdm(range(0, q.shape[0], ts), desc='FAISS GPU K-means clustering'):
+        attn = torch.einsum('qhnc,khmc->qkhnm', q[t:t+ts], k_in) * scale
+        attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
+        attn = attn.softmax(dim=-1)
+        sample = attn.mean(dim=1)
+        sample_np = sample.cpu().numpy().astype('float32')
+
+        kmeans.train(sample_np)  # Train on current batch
+        _, cluster_labels_np = kmeans.index.search(sample_np, 1)
+        cluster_labels_torch = torch.from_numpy(cluster_labels_np.reshape(-1)).to(q.device)
+
+        for i in range(num_clusters):
+            final_mask[i, t*q.shape[2]:(t+ts)*q.shape[2]][cluster_labels_torch==i] = 1
+
+    print('cluster centroids:', num_clusters)
+    return final_mask
 
 def eval(val_loader, model, device, ratio, tau, save_path=None, writer=None, train=False):
     with torch.no_grad():
@@ -234,12 +272,8 @@ def eval(val_loader, model, device, ratio, tau, save_path=None, writer=None, tra
             data_format="BTCHW",
             same_on_frame=True)
         print(' --> running inference')
-        for idx, val_sample in enumerate(val_loader):
+        for val_sample in tqdm(val_loader, desc='evaluating video sequences'):
             rgbs, gts, category, val_idx = val_sample
-            # rgbs = rgbs[:,:5]
-            # gts = gts[:,:5]
-            # category = category
-            # val_idx = val_idx[:5]
             print(f'-----------process {category} sequence in one shot-------')
             rgbs = rgbs.float().to(device)  # b t c h w
             rgbs = aug_list(rgbs)

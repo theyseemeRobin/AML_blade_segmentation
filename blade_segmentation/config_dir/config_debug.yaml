@@ -2,11 +2,11 @@ defaults:
   - config_default
 
 # Training parameters
-num_epochs: 20
+num_epochs: 2
 
 # Log settings
 log_freq: 1
-eval_freq: 10
+eval_freq: 1
 save_freq: 100
 
 # Model paths

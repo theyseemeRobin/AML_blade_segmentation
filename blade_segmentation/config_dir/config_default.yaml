@@ -11,6 +11,13 @@ ent_scale: 1.0
 cons_scale: 1.0
 grad_iter: 0
 
+# Evaluation parameters
+ratio: 10
+tau: 1.0
+# It seems like different values are used between training and evaluation
+attn_drop_t: 0.4
+path_drop: 0.2
+
 # Dataset settings
 dataset: turbines_OT
 with_rgb: false
