@@ -96,5 +96,29 @@ def create_train_val_set(data_path='data/optic_thermal'):
             train_path = os.path.join(images_path, main_folder, 'train', modality)
             val_path = os.path.join(images_path, main_folder, 'val', modality)
             print(f'{main_folder} - {modality} - Train: {len(os.listdir(train_path))}, Val: {len(os.listdir(val_path))}')
+            
+def download_masks(data_path='data/optic_thermal'):
+    
+    masks_path = os.path.join(data_path, 'Images/test-dev/Optical_Masks')
+    
+    # If the Masks folder already exists, return
+    if os.path.exists(masks_path):
+        print('Masks already downloaded.')
+        return
+    
+    dataset_id = os.getenv('DATASET_MASK_ID')
+
+    # Check if masks.zip exists
+    if not os.path.exists(masks_path):
+        gdown.download(id=dataset_id, output=masks_path)
+        
+    # Unzip the masks in data_path directly
+    with zipfile.ZipFile(masks_path, 'r') as zip_ref:
+        zip_ref.extractall('data/')
+        
+    # Clean up the masks.zip
+    os.remove(masks_path)
+    
+    print('Masks downloaded and unzipped.')
                 
     

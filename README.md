@@ -13,6 +13,7 @@ Setup .env file with the following content in the root directory:
 ```bash
 # .env
 DATASET_ID="GOOGLE_DRIVE_FILE_ID"
+DATASET_MASK_ID="GOOGLE_DRIVE_FILE_ID"
 WANDB_API_KEY="Your WANDB API key"
 WANDB_ENTITY=aml-blade-segmentation
 ```
@@ -28,7 +29,7 @@ python train.py --config-name config.yaml
 
 Update the desired config file as needed. For hyperparameter tuning, hydra's sweeper can be used. To use the sweeper
 configuration in a config file for hyperparameter tuning, the train script should be executed with a `--multirun` flag:
+
 ```bash
 python train.py --config-name config.yaml --multirun
 ```
-
