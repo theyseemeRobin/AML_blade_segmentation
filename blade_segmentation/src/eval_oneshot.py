@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import kornia
 from kornia.augmentation.container import VideoSequential
+from kornia.enhance import Denormalize, Normalize
 import faiss.contrib.torch_utils
 from tqdm import tqdm
 
@@ -216,7 +217,7 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, d
     t2 = time.time()
     
     # Replace hierarchical_cluster with k-means clustering
-    dist = faiss_kmeans_cluster(q, k, scale, num_clusters=8, device=device) # Use FAISS GPU K-means 
+    dist = faiss_kmeans_cluster(q, k, scale, num_clusters=3, device=device) # Use FAISS GPU K-means 
     
     dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
     mask = dist.unsqueeze(1)
@@ -242,7 +243,7 @@ def faiss_kmeans_cluster(q, k_in, scale, num_clusters=8, device='cuda', chunk_si
     d = sample.shape[1]
     
     # Initialize FAISS kmeans once
-    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=10, verbose=False, gpu=False)
+    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=25, verbose=False, gpu=False)
     kmeans.train(sample.cpu().numpy().astype('float32'))
     
     # Process chunks
@@ -277,17 +278,28 @@ def eval(val_loader, model, device, ratio, tau, save_path=None, writer=None, tra
         model.eval()
         mean = torch.tensor([0.43216, 0.394666, 0.37645])
         std = torch.tensor([0.22803, 0.22145, 0.216989])
-        normalize_video = kornia.augmentation.Normalize(mean, std)
-        aug_list = VideoSequential(
-            normalize_video,
+        
+        # Create video-appropriate normalization/denormalization
+        normalize_video = VideoSequential(
+            Normalize(mean, std),
             data_format="BTCHW",
-            same_on_frame=True)
+            same_on_frame=True
+        )
+        
+        denormalize_video = VideoSequential(
+            Denormalize(mean.to(device), std.to(device)),
+            data_format="BTCHW",
+            same_on_frame=True
+        )
+        
         print(' --> running inference')
         for val_sample in tqdm(val_loader, desc='evaluating video sequences'):
             rgbs, gts, category, val_idx = val_sample
             print(f'-----------process {category} sequence in one shot-------')
             rgbs = rgbs.float().to(device)  # b t c h w
-            rgbs = aug_list(rgbs)
+            
+            # Normalize through video-sequential
+            rgbs = normalize_video(rgbs)
             gts = gts.float().to(device)  # b t c h w
             T = rgbs.shape[1]
             masks_collection = {}
@@ -295,6 +307,65 @@ def eval(val_loader, model, device, ratio, tau, save_path=None, writer=None, tra
                 masks_collection[i] = []
             masks_collection = mem_efficient_inference(masks_collection, rgbs, gts, model, T, ratio, tau, device)
             torch.save(masks_collection, save_path+'/%s.pth' % category[0])
+            
+            # --- New code for video creation ---
+            # Prepare original frames
+            original_frames = denormalize_video(rgbs).cpu()
+
+            # Create video writer
+            video_dir = os.path.join(save_path, 'videos')
+            os.makedirs(video_dir, exist_ok=True)
+            video_path = os.path.join(video_dir, f'{category[0]}_segmentation.avi')
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            fps = 30  # Adjust based on your frame rate
+            
+            # Get frame dimensions from first mask
+            first_mask = masks_collection[0][0].cpu()
+            
+            # Directly extract spatial dimensions from last two axes
+            mask_h, mask_w = first_mask.shape[-2:]  # Works for any number of dimensions
+
+            h, w = original_frames.shape[-2:]  # Original frame dimensions
+
+            # Handle potential resolution mismatch
+            scale_factor_h = h // mask_h
+            scale_factor_w = w // mask_w
+
+            out = cv2.VideoWriter(video_path, fourcc, fps, (w, h))
+
+            for i in range(T):
+                # Process original frame
+                frame = original_frames[0, i].numpy()
+                frame = np.transpose(frame, (1, 2, 0))  # CHW -> HWC
+                frame = (frame * 255).astype(np.uint8)
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+                # Process masks
+                if len(masks_collection[i]) == 0:
+                    out.write(frame)
+                    continue
+                
+                masks = masks_collection[i][0].cpu().squeeze()  # Remove batch dimension
+                num_masks = masks.shape[0]
+                
+                # Create segmentation map
+                seg_map = torch.argmax(masks, dim=0).numpy().astype(np.uint8)
+                
+                # Upscale to original resolution
+                if (scale_factor_h > 1) or (scale_factor_w > 1):
+                    seg_map = cv2.resize(seg_map, (w, h), interpolation=cv2.INTER_NEAREST)
+                
+                # Apply color map
+                color_map = cv2.applyColorMap((seg_map * (255 // max(num_masks, 1))).astype(np.uint8), cv2.COLORMAP_JET)
+                
+                # Overlay on original frame
+                overlay = cv2.addWeighted(frame, 0.7, color_map, 0.3, 0)
+                
+                # Write to video
+                out.write(overlay)
+
+            out.release()
+            print(f'Saved segmentation video to {video_path}')
 
 def main(args):
     epsilon = 1e-5
