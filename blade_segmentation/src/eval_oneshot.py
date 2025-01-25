@@ -8,6 +8,7 @@ import numpy as np
 import src.utils as ut
 import src.config as cg
 from src.model.model_cluster import AttEncoder
+import PIL.Image as Image
 
 import torch
 import torchvision
@@ -22,6 +23,7 @@ from kornia.augmentation.container import VideoSequential
 from kornia.enhance import Denormalize, Normalize
 import faiss.contrib.torch_utils
 from sklearn.cluster import DBSCAN
+from vos_benchmark.benchmark import benchmark
 from tqdm import tqdm
 
 def kl_distance(final_set, attn):
@@ -255,7 +257,7 @@ def faiss_kmeans_cluster(q, k_in, scale, args, device='cuda'):
     d = sample.shape[1]
     
     # Initialize FAISS kmeans once
-    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=200, verbose=False, gpu=False)
+    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=args.n_iter, verbose=False, gpu=False)
     kmeans.train(sample.cpu().numpy().astype('float32'))
     
     # Process chunks
@@ -359,6 +361,7 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             rgbs = normalize_video(rgbs)
             gts = gts.float().to(device)  # b t c h w
             T = rgbs.shape[1]
+            print("Number of frames: ", T)
             masks_collection = {}
             for i in range(T):
                 masks_collection[i] = []
@@ -367,8 +370,83 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             
             # Prepare original frames
             original_frames = denormalize_video(rgbs).cpu()
+            
+            # Resolution of windmill format
+            original_resolution = (args.gt_x, args.gt_y)
+            save_davis_masks(masks_collection, category, save_path, original_resolution, T)
+            
             # Create segmentation video
-            create_segmentation_video(original_frames, masks_collection, category, save_path, T)
+            if args.save_video:
+                create_segmentation_video(original_frames, masks_collection, category, save_path, T)
+    
+    gt_subdir = 'DAVIS_Masks' # For the test set
+    if train:
+        gt_subdir = 'val/DAVIS_Masks'
+        gt_dir = os.path.join(args.basepath, gt_subdir)
+        
+    pred_dir = os.path.join(save_path, 'Annotations') # Might need to change this during testing
+    
+    results = benchmark([gt_dir], [pred_dir])
+
+    # J - Jaccard (Region similarity)
+    # JF - Jaccard (Boundary similarity)
+    # F - F-measure
+    J, JF, F = results[:3]
+    
+    # Lists are returned since benchmark() can handle multiple datasets
+    return J[0], JF[0], F[0]
+            
+def load_davis_palette(palette_path):
+    """Load DAVIS palette from text file"""
+    palette = np.loadtxt(palette_path, dtype=np.uint8)
+    
+    # Verify palette format
+    if palette.shape != (256, 3):
+        raise ValueError(f"Invalid palette shape {palette.shape}, expected (256, 3)")
+    
+    # Flatten to 768-length list (R1, G1, B1, R2, G2, B2, ...)
+    return palette.flatten()
+
+def save_davis_masks(masks_collection, category, save_path, original_resolution, T):
+    """
+    Save masks in DAVIS-compatible indexed PNG format
+    Each Pixel in the png contains 1 channel with the object ID that starts from 1
+    """
+    # Load palette
+    davis_palette = load_davis_palette('config_dir/palette.txt')
+    
+    # Create output directory
+    mask_dir = os.path.join(save_path, 'Annotations', category[0])
+    os.makedirs(mask_dir, exist_ok=True)
+    
+    # Get original dimensions
+    h, w = original_resolution
+    
+    # Process all frames explicitly
+    for frame_idx in range(T):  # 0-based indexing up to T-1
+        if frame_idx not in masks_collection or not masks_collection[frame_idx]:
+            # Create empty mask
+            mask = np.zeros((h, w), dtype=np.uint8)
+        else:
+            # Get mask tensor [num_objects, mask_h, mask_w]
+            mask_tensor = masks_collection[frame_idx][0].squeeze().cpu().numpy()
+            
+            # 1. Convert to object IDs using mask dimensions
+            object_ids = np.argmax(mask_tensor, axis=0).astype(np.uint8) + 1
+            
+            # 2. Upscale to original resolution
+            mask = cv2.resize(object_ids, (w, h), interpolation=cv2.INTER_NEAREST)
+            
+            # 3. Ensure background is 0 and clip values
+            mask = np.clip(mask, 0, 254)
+
+        # Save with palette
+        img = Image.fromarray(mask, mode='P')
+        img.putpalette(davis_palette)
+        frame_path = os.path.join(mask_dir, f"{frame_idx:05d}.png")
+        img.save(frame_path, format='PNG', transparency=254, compress_level=0)
+    
+    print(f'Saved DAVIS masks to {mask_dir}')
             
 def create_segmentation_video(original_frames, masks_collection, category, save_path, T):
     """

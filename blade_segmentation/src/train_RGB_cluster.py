@@ -30,6 +30,9 @@ def train_rgb_cluster(args):
     print("{}".format(args).replace(', ', ',\n'))
 
     device = torch.device(args.device)
+    
+    # For 1 based indexing
+    args.num_epochs += 1
 
     # fix the seed for reproducibility
     seed = args.seed + ut.get_rank()
@@ -207,7 +210,7 @@ def train_rgb_cluster(args):
         for key in losses:
             losses[key] /= len(trn_loader)
 
-        if (epoch % args.log_freq == 0 or epoch == args.num_epochs - 1):
+        if (epoch % args.log_freq == 0):
             # print('epoch {},'.format(epoch),
             #     'time {:.01f}s,'.format(time.time() - timestart),
             #     'learning rate {:.05f}'.format(lr_scheduler[it]),
@@ -236,7 +239,7 @@ def train_rgb_cluster(args):
                 }, filename)
         
         # Evaluate the model, logs results to wandb
-        if (epoch % args.eval_freq == 0 and epoch > 0) or epoch == args.num_epochs - 1:   
+        if (epoch % args.eval_freq == 0):   
             
             # Free memory before evaluation
             torch.cuda.empty_cache()
@@ -247,7 +250,16 @@ def train_rgb_cluster(args):
             # Garbage collection
             gc.collect()
             
-            eval(val_loader, model, device, args, save_path=resultsPath, train=True)
+            J, JF, F = eval(val_loader, model, device, args, save_path=resultsPath, train=True)
+            
+            # Log in wandb
+            wandb.log(
+                {'val/J': J,
+                'val/JF': JF,
+                'val/F': F},
+                step=epoch
+            )
+            
     
     # Save the final model
     filename = os.path.join(modelPath, 'checkpoint_final.pth')

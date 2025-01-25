@@ -2,6 +2,9 @@ import os
 import zipfile
 import gdown
 import shutil
+import numpy as np
+from PIL import Image
+from tqdm import tqdm
 
 def download_data(data_path='data/optic_thermal'):
     
@@ -121,4 +124,61 @@ def download_masks(data_path='data/optic_thermal'):
     
     print('Masks downloaded and unzipped.')
                 
+def convert_masks_to_davis_format(base_path='data/optic_thermal'):
+    # Define mask locations to process
+    mask_locations = [
+        ('test-dev', 'Images/test-dev/Masks_Optical'),
+        ('trainval-val', 'Images/trainval/val/Masks_Optical')
+    ]
     
+    # Create DAVIS palette (first color=background, second=object)
+    davis_palette = np.zeros((256, 3), dtype=np.uint8)
+    davis_palette[1] = [255, 0, 0]  # Red for object (index 1)
+
+    for set_name, rel_path in mask_locations:
+        masks_optical_path = os.path.join(base_path, rel_path)
+        davis_masks_path = os.path.join(base_path, rel_path.replace('Masks_Optical', 'DAVIS_Masks'))
+        
+        if not os.path.exists(masks_optical_path):
+            print(f"Skipping {set_name} - masks not found at {masks_optical_path}")
+            continue
+            
+        if os.path.exists(davis_masks_path):
+            print(f"DAVIS masks already exist for {set_name}")
+            continue
+            
+        print(f"Processing {set_name} masks...")
+        
+        # Create directory structure mirror
+        for root, dirs, files in os.walk(masks_optical_path):
+            # Create corresponding DAVIS_Masks directory
+            relative_path = os.path.relpath(root, masks_optical_path)
+            davis_dir = os.path.join(davis_masks_path, relative_path)
+            os.makedirs(davis_dir, exist_ok=True)
+
+            # Process mask files
+            for f in tqdm(files, desc=f'Processing {relative_path}'):
+                if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    src_path = os.path.join(root, f)
+                    dst_path = os.path.join(davis_dir, f)
+                    
+                    try:
+                        # Load RGBA mask
+                        with Image.open(src_path) as img:
+                            rgba = np.array(img.convert('RGBA'))
+                            
+                        # Create binary mask from alpha channel
+                        alpha = rgba[..., 3]
+                        mask = np.where(alpha > 0, 1, 0).astype(np.uint8)
+                        
+                        # Create indexed image
+                        davis_img = Image.fromarray(mask, mode='P')
+                        davis_img.putpalette(davis_palette.flatten())
+                        
+                        # Save with same filename
+                        davis_img.save(dst_path)
+                        
+                    except Exception as e:
+                        print(f"Error processing {src_path}: {str(e)}")
+                        
+        print(f"Completed processing {set_name}. Masks saved to {davis_masks_path}\n")

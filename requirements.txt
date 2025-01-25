@@ -22,4 +22,5 @@ pyparsing
 cycler
 kiwisolver
 scikit-learn
-faiss
+faiss-cpu
+vos-benchmark
