@@ -4,6 +4,7 @@ import einops
 import sys
 import cv2
 import numpy as np
+import gc
 
 import src.utils as ut
 import src.config as cg
@@ -11,9 +12,6 @@ from src.model.model_cluster import AttEncoder
 import PIL.Image as Image
 
 import torch
-import torchvision
-import torch.nn as nn
-import torch.optim as optim
 
 from argparse import ArgumentParser
 import matplotlib.pyplot as plt
@@ -21,174 +19,11 @@ import torch.nn.functional as F
 import kornia
 from kornia.augmentation.container import VideoSequential
 from kornia.enhance import Denormalize, Normalize
-import faiss.contrib.torch_utils
-from sklearn.cluster import DBSCAN
+
 from vos_benchmark.benchmark import benchmark
 from tqdm import tqdm
 
-def kl_distance(final_set, attn):
-    ## kl divergence between two distributions
-    self_entropy = - torch.einsum('nc,nc->n', final_set, torch.log(final_set)).unsqueeze(-1) - torch.einsum('mc,mc->m', attn, torch.log(attn)).unsqueeze(0)
-    cross_entropy = - torch.einsum('nc,mc->nm', final_set, torch.log(attn)) - torch.einsum('mc,nc->nm', attn, torch.log(final_set))
-    distance = cross_entropy - self_entropy
-    return distance
-
-def hierarchical_cluster(attn, tau, num_iter, device):
-    # attn t hw c
-    ts = 3
-    bs = 10000
-    attn = attn / attn.sum(dim=-1, keepdim=True)
-    final_set = []
-
-    ## use a temporal window for clustering of the first hierarchy to speed up clustering process
-    for t in range(0, attn.shape[0], ts):
-        sample = attn[t:t+ts].view(-1, attn.shape[-1]).to(device)
-        distance = kl_distance(sample, sample)
-        keep_set = []
-        for i in range(0, distance.shape[0], bs):
-            indices = (distance[i:i+bs] <= tau) # bs hw
-            dist = torch.einsum('bn,nc->bc', indices.float(), sample) # bs hw
-            dist = dist / dist.sum(dim=1, keepdim=True)
-            keep_set.append(dist)
-        keep_set = torch.cat(keep_set, dim=0)
-        distance = kl_distance(keep_set, keep_set)
-        indicator = torch.ones(len(keep_set)).to(device)
-        for i in range(len(keep_set)):
-            if indicator[i] == 0:
-                continue
-            indices = (distance[i] <= tau) * (indicator > 0) # K
-            dist = torch.mean(keep_set[indices], dim=0)
-            final_set.append(dist)
-            indicator[indices] = 0
-    keep_set = final_set
-
-    ## clustering on all frames at the following hierarchies until no change
-    for t in range(num_iter):
-        final_set = []
-        keep_set = torch.stack(keep_set, dim=0) # K hw
-        distance = kl_distance(keep_set, keep_set)
-        indicator = torch.ones(len(keep_set)).to(device) # K
-        for i in range(len(keep_set)):
-            if indicator[i] == 0:
-                continue
-            indices = (distance[i] <= tau) * (indicator > 0) # K
-            dist = torch.mean(keep_set[indices], dim=0)
-            final_set.append(dist)
-            indicator[indices] = 0
-        if len(final_set) == len(keep_set):
-            break
-        keep_set = final_set
-    final_set = torch.stack(final_set, dim=0)
-
-    ## calculate cluster assignments as object segmentation masks
-    distance = kl_distance(final_set.to(attn.device), attn.view(-1, attn.shape[-1]))
-    nms_set = torch.argmin(distance, dim=0)
-    final_mask = torch.zeros(final_set.shape[0], attn.shape[0]*attn.shape[1]).to(attn.device)
-    print('cluster centroids:', final_set.shape)
-    for i in range(final_mask.shape[0]):
-        final_mask[i, nms_set==i] = 1
-    return final_mask
-
-def mem_efficient_hierarchical_cluster(q, k, scale, tau, num_iter, device):
-    # q t head hw c
-    # k tk head hw c
-    ts = 3 # temporal window size, num_frames?
-    bs = 10000
-    final_set = []
-
-    ## use a temporal window for clustering of the first hierarchy to speed up clustering process
-    for t in tqdm(range(0, q.shape[0], ts), desc='clustering on the first hierarchy'):
-        attn = torch.einsum('qhnc,khmc->qkhnm', q[t:t+ts], k) * scale
-        attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
-        attn = attn.softmax(dim=-1)
-        sample = attn.mean(dim=1).to(device) # thw khw
-        distance = kl_distance(sample, sample)
-        keep_set = []
-        for i in range(0, distance.shape[0], bs):
-            indices = (distance[i:i+bs] <= tau) # bs hw
-            dist = torch.einsum('bn,nc->bc', indices.float(), sample) # bs hw
-            dist = dist / dist.sum(dim=1, keepdim=True)
-            keep_set.append(dist)
-        keep_set = torch.cat(keep_set, dim=0)
-        distance = kl_distance(keep_set, keep_set)
-        indicator = torch.ones(len(keep_set)).to(device)
-        for i in range(len(keep_set)):
-            if indicator[i] == 0:
-                continue
-            indices = (distance[i] <= tau) * (indicator > 0) # K
-            dist = torch.mean(keep_set[indices], dim=0)
-            final_set.append(dist)
-            indicator[indices] = 0
-    keep_set = final_set
-
-    ## clustering on all frames at the following hierarchies until no change
-    for t in tqdm(range(num_iter), desc='clustering on the following hierarchies'):
-        final_set = []
-        keep_set = torch.stack(keep_set, dim=0) # K hw
-        distance = kl_distance(keep_set, keep_set)
-        indicator = torch.ones(len(keep_set)).to(device) # K
-        for i in range(len(keep_set)):
-            if indicator[i] == 0:
-                continue
-            indices = (distance[i] <= tau) * (indicator > 0) # K
-            dist = torch.mean(keep_set[indices], dim=0)
-            final_set.append(dist)
-            indicator[indices] = 0
-        if len(final_set) == len(keep_set):
-            break
-        keep_set = final_set
-    final_set = torch.stack(final_set, dim=0)
-
-    ## calculate cluster assignments as object segmentation masks
-    final_mask = torch.zeros(final_set.shape[0], q.shape[0]*q.shape[2]).to(q.device)
-    for t in tqdm(range(0, q.shape[0], ts), desc='calculating cluster assignments'):
-        attn = torch.einsum('qhnc,khmc->qkhnm', q[t:t+ts], k) * scale
-        attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
-        attn = attn.softmax(dim=-1)
-        sample = attn.mean(dim=1).to(device) # thw khw
-        distance = kl_distance(final_set.to(sample.device), sample) # K thw
-        nms_set = torch.argmin(distance, dim=0)
-        for i in range(final_mask.shape[0]):
-            final_mask[:, t*q.shape[2]:(t+ts)*q.shape[2]][i, nms_set==i] = 1
-    print('cluster centroids:', final_set.shape)           
-    return final_mask
-
-# This apparently takes 300 GB of RAM
-def inference(masks_collection, rgbs, gts, model, T, ratio, tau, device):
-    bs = 1
-    feats = []
-    ## extract frame-wise dino features
-    for i in tqdm(range(0, T, bs), desc='extracting features from frames'):
-        input = rgbs[:, i:i+bs]
-        input = einops.rearrange(input, 'b t c h w -> (b t) c h w')
-        with torch.no_grad():
-            _, _, _, feat = model.encoder(input)
-            feats.append(feat.cpu())
-    feats = torch.cat(feats, 0).to(device) # t c h w
-
-    ## calculate the spatio-temporal attention, use sparse sampling on keys to reduce computational cost
-    T, C, H, W = feats.shape
-    num_heads = model.temporal_transformer[0].attn.num_heads
-    feats = einops.rearrange(feats, 't c h w -> t (h w) c')
-    feats = model.temporal_transformer[0].norm1(feats) # t hw c
-    qkv = model.temporal_transformer[0].attn.qkv(feats)
-    qkv = qkv.reshape(T, H*W, 3, num_heads, C // num_heads).permute(2, 0, 3, 1, 4) # 3 t h hw c
-    q, k, _ = qkv.cpu().unbind(0) # t h hw c
-    key_indices = torch.arange(T//ratio) * ratio # sparse sampling the keys with a sparsity ratio
-    k = k[key_indices]
-    attention = torch.einsum('qhnc,khmc->qkhnm', q, k) * model.temporal_transformer[0].attn.scale
-    attention = einops.rearrange(attention, 'q k h n m -> (q n) h (k m)')
-    attention = attention.softmax(dim=-1)
-    attention = attention.mean(dim=1) # thw khw
-    print('spatio-temporal attention matrix:', attention.shape)
-
-    ## clustering on the spatio-temporal attention maps and produce segmentation for the whole video
-    dist = hierarchical_cluster(attention.view(T, H*W, -1), tau=tau, num_iter=10000, device=device)
-    dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
-    mask = dist.unsqueeze(1)
-    for i in range(T):
-        masks_collection[i].append(mask[i])
-    return masks_collection
+from src.cluster import mem_efficient_hierarchical_cluster, kmeans_cluster, sklearn_dbscan_cluster
 
 def mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device):
     
@@ -222,13 +57,21 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device)
     ## clustering on the spatio-temporal attention maps and produce segmentation for the whole video
     t2 = time.time()
     
+    # Delete unnecessary variables
+    del feats, qkv
+    
+    gc.collect()
+    
     if args.clustering_algorithm == 'kmeans':
-        dist = faiss_kmeans_cluster(q, k, scale, args, device=device)
+        dist = kmeans_cluster(q, k, scale, args, device=device)
     elif args.clustering_algorithm == 'dbscan':
         dist = sklearn_dbscan_cluster(q, k, scale, args, device=device)
+    elif args.clustering_algorithm == 'hierarchical':
+        dist = mem_efficient_hierarchical_cluster(q, k, scale, args, device=device)
     else:
         raise ValueError(f"Unknown clustering algorithm: {args.clustering_algorithm}")
     
+    print('Distance matrix:', dist.shape)
     dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
     mask = dist.unsqueeze(1)
     for i in range(T):
@@ -237,98 +80,6 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device)
     print('Attention map, clustering time:', t2-t1, t3-t2)
     print('Total time:', t3-t1)
     return masks_collection
-
-def faiss_kmeans_cluster(q, k_in, scale, args, device='cuda'):
-    
-    num_clusters = args.num_clusters
-    chunk_size = args.chunk_size
-    
-    batch_size = q.shape[0]
-    seq_len = q.shape[2]
-    total_len = batch_size * seq_len
-    final_mask = torch.zeros(num_clusters, total_len, device=q.device)
-
-    # Process first chunk to get dimensions
-    q_chunk = q[0:1]
-    attn = torch.einsum('qhnc,khmc->qkhnm', q_chunk, k_in) * scale
-    attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
-    attn = attn.softmax(dim=-1)
-    sample = attn.mean(dim=1)
-    d = sample.shape[1]
-    
-    # Initialize FAISS kmeans once
-    kmeans = faiss.Kmeans(d=d, k=num_clusters, niter=args.n_iter, verbose=False, gpu=False)
-    kmeans.train(sample.cpu().numpy().astype('float32'))
-    
-    # Process chunks
-    for t in tqdm(range(0, batch_size, chunk_size)):
-        # Process chunk
-        q_chunk = q[t:t+chunk_size]
-        attn = torch.einsum('qhnc,khmc->qkhnm', q_chunk, k_in) * scale
-        attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
-        attn = attn.softmax(dim=-1)
-        sample = attn.mean(dim=1)
-        
-        # Get cluster assignments for chunk
-        sample_np = sample.cpu().numpy().astype('float32')
-        _, chunk_labels = kmeans.index.search(sample_np, 1)
-        
-        # Update mask for this chunk
-        start_idx = t * seq_len
-        end_idx = min((t + chunk_size) * seq_len, total_len)
-        chunk_labels_torch = torch.from_numpy(chunk_labels.reshape(-1)).to(q.device)
-        chunk_indices = torch.arange(start_idx, end_idx, device=q.device)
-        final_mask[chunk_labels_torch, chunk_indices] = 1
-        
-        # Clean up
-        torch.cuda.empty_cache()
-        del q_chunk, attn, sample, sample_np, chunk_labels
-
-    return final_mask
-
-def sklearn_dbscan_cluster(q, k_in, scale, args, device='cuda'):
-    eps = args.eps
-    min_samples = args.min_samples
-    chunk_size = args.chunk_size
-
-    batch_size = q.shape[0]
-    seq_len = q.shape[2]
-    total_len = batch_size * seq_len
-    final_mask = torch.zeros(0, total_len, device=device)
-
-    for t in tqdm(range(0, batch_size, chunk_size), desc='DBSCAN clustering'):
-        q_chunk = q[t:t+chunk_size]
-        attn = torch.einsum('qhnc,khmc->qkhnm', q_chunk, k_in) * scale
-        attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
-        attn = attn.softmax(dim=-1)
-        sample = attn.mean(dim=1).cpu().numpy()
-
-        # Perform DBSCAN clustering
-        db = DBSCAN(eps=eps, min_samples=min_samples).fit(sample)
-        labels = db.labels_
-
-        # Create binary masks for each cluster
-        unique_labels = np.unique(labels[labels != -1])  # Exclude noise
-        if len(unique_labels) == 0:
-            continue
-            
-        # Initialize chunk mask
-        chunk_mask = torch.zeros(len(unique_labels), total_len, device=device)
-        
-        # Calculate indices for this chunk
-        start_idx = t * seq_len
-        end_idx = min((t + chunk_size) * seq_len, total_len)
-        chunk_indices = torch.arange(start_idx, end_idx, device=device)
-        
-        # Assign labels to mask
-        for i, label in enumerate(unique_labels):
-            mask_indices = torch.tensor(np.where(labels == label)[0], device=device)
-            valid_indices = mask_indices[mask_indices < len(chunk_indices)]
-            chunk_mask[i, chunk_indices[valid_indices]] = 1
-
-        final_mask = torch.cat([final_mask, chunk_mask], dim=0)
-
-    return final_mask
 
 def eval(val_loader, model, device, args, save_path=None, writer=None, train=False):
     

@@ -13,18 +13,18 @@ grad_iter: 0
 
 # Evaluation parameters
 ratio: 10
-chunk_size: 1 # How many frames to process at once
-clustering_algorithm: "kmeans" # dbscan or kmeans
+chunk_size: 4 # How many frames to process at once
+clustering_algorithm: "kmeans" # dbscan, kmeans or hierarchical
 gt_x: 480
 gt_y: 852
 save_video: true
 
-# Hierarchical clustering parameters (way too slow)
-tau: 1.0
+# Hierarchical clustering parameters
+tau: 0.01
 
 # KMeans parameters
 num_clusters: 4
-n_iter: 200
+n_iter: 40 # Currently used for hierarchical clustering too
 
 # DBSCAN parameters
 eps: 0.5
