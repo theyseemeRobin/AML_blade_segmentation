@@ -21,6 +21,7 @@ import kornia
 from kornia.augmentation.container import VideoSequential
 from kornia.enhance import Denormalize, Normalize
 import faiss.contrib.torch_utils
+from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
 def kl_distance(final_set, attn):
@@ -219,8 +220,12 @@ def mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device)
     ## clustering on the spatio-temporal attention maps and produce segmentation for the whole video
     t2 = time.time()
     
-    # Replace hierarchical_cluster with k-means clustering
-    dist = faiss_kmeans_cluster(q, k, scale, args, device=device) # Use FAISS GPU K-means 
+    if args.clustering_algorithm == 'kmeans':
+        dist = faiss_kmeans_cluster(q, k, scale, args, device=device)
+    elif args.clustering_algorithm == 'dbscan':
+        dist = sklearn_dbscan_cluster(q, k, scale, args, device=device)
+    else:
+        raise ValueError(f"Unknown clustering algorithm: {args.clustering_algorithm}")
     
     dist = einops.rearrange(dist, '(s p) (t h w) -> t s p h w', t=T, p=1, h=H)
     mask = dist.unsqueeze(1)
@@ -276,6 +281,50 @@ def faiss_kmeans_cluster(q, k_in, scale, args, device='cuda'):
         # Clean up
         torch.cuda.empty_cache()
         del q_chunk, attn, sample, sample_np, chunk_labels
+
+    return final_mask
+
+def sklearn_dbscan_cluster(q, k_in, scale, args, device='cuda'):
+    eps = args.eps
+    min_samples = args.min_samples
+    chunk_size = args.chunk_size
+
+    batch_size = q.shape[0]
+    seq_len = q.shape[2]
+    total_len = batch_size * seq_len
+    final_mask = torch.zeros(0, total_len, device=device)
+
+    for t in tqdm(range(0, batch_size, chunk_size), desc='DBSCAN clustering'):
+        q_chunk = q[t:t+chunk_size]
+        attn = torch.einsum('qhnc,khmc->qkhnm', q_chunk, k_in) * scale
+        attn = einops.rearrange(attn, 'q k h n m -> (q n) h (k m)')
+        attn = attn.softmax(dim=-1)
+        sample = attn.mean(dim=1).cpu().numpy()
+
+        # Perform DBSCAN clustering
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(sample)
+        labels = db.labels_
+
+        # Create binary masks for each cluster
+        unique_labels = np.unique(labels[labels != -1])  # Exclude noise
+        if len(unique_labels) == 0:
+            continue
+            
+        # Initialize chunk mask
+        chunk_mask = torch.zeros(len(unique_labels), total_len, device=device)
+        
+        # Calculate indices for this chunk
+        start_idx = t * seq_len
+        end_idx = min((t + chunk_size) * seq_len, total_len)
+        chunk_indices = torch.arange(start_idx, end_idx, device=device)
+        
+        # Assign labels to mask
+        for i, label in enumerate(unique_labels):
+            mask_indices = torch.tensor(np.where(labels == label)[0], device=device)
+            valid_indices = mask_indices[mask_indices < len(chunk_indices)]
+            chunk_mask[i, chunk_indices[valid_indices]] = 1
+
+        final_mask = torch.cat([final_mask, chunk_mask], dim=0)
 
     return final_mask
 

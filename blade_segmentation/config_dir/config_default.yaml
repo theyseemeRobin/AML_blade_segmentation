@@ -13,9 +13,18 @@ grad_iter: 0
 
 # Evaluation parameters
 ratio: 10
-tau: 1.0
 chunk_size: 1 # How many frames to process at once
-num_clusters: 16
+clustering_algorithm: "kmeans" # dbscan or kmeans
+
+# Hierarchical clustering parameters (way too slow)
+tau: 1.0
+
+# KMeans parameters
+num_clusters: 8
+
+# DBSCAN parameters
+eps: 0.5
+min_samples: 5
 
 # It seems like different values are used between training and evaluation
 attn_drop_t: 0.4
