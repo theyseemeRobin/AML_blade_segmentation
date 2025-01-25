@@ -365,64 +365,76 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             masks_collection = mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device)
             torch.save(masks_collection, save_path+'/%s.pth' % category[0])
             
-            # --- New code for video creation ---
             # Prepare original frames
             original_frames = denormalize_video(rgbs).cpu()
-
-            # Create video writer
-            video_dir = os.path.join(save_path, 'videos')
-            os.makedirs(video_dir, exist_ok=True)
-            video_path = os.path.join(video_dir, f'{category[0]}_segmentation.avi')
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
-            fps = 30  # Adjust based on your frame rate
+            # Create segmentation video
+            create_segmentation_video(original_frames, masks_collection, category, save_path, T)
             
-            # Get frame dimensions from first mask
-            first_mask = masks_collection[0][0].cpu()
-            
-            # Directly extract spatial dimensions from last two axes
-            mask_h, mask_w = first_mask.shape[-2:]  # Works for any number of dimensions
+def create_segmentation_video(original_frames, masks_collection, category, save_path, T):
+    """
+    Creates a video visualization of segmentation masks overlaid on original frames.
+    
+    Args:
+        original_frames (torch.Tensor): Denormalized video frames
+        masks_collection (list): Collection of segmentation masks
+        category (list): Category name for the video
+        save_path (str): Base directory to save the video
+        T (int): Number of frames
+    """
+    # Create video writer
+    video_dir = os.path.join(save_path, 'videos')
+    os.makedirs(video_dir, exist_ok=True)
+    video_path = os.path.join(video_dir, f'{category[0]}_segmentation.mp4')
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fps = 30  # Adjust based on your frame rate
+    
+    # Get frame dimensions from first mask
+    first_mask = masks_collection[0][0].cpu()
+    
+    # Directly extract spatial dimensions from last two axes
+    mask_h, mask_w = first_mask.shape[-2:]  # Works for any number of dimensions
 
-            h, w = original_frames.shape[-2:]  # Original frame dimensions
+    h, w = original_frames.shape[-2:]  # Original frame dimensions
 
-            # Handle potential resolution mismatch
-            scale_factor_h = h // mask_h
-            scale_factor_w = w // mask_w
+    # Handle potential resolution mismatch
+    scale_factor_h = h // mask_h
+    scale_factor_w = w // mask_w
 
-            out = cv2.VideoWriter(video_path, fourcc, fps, (w, h))
+    out = cv2.VideoWriter(video_path, fourcc, fps, (w, h))
 
-            for i in range(T):
-                # Process original frame
-                frame = original_frames[0, i].numpy()
-                frame = np.transpose(frame, (1, 2, 0))  # CHW -> HWC
-                frame = (frame * 255).astype(np.uint8)
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    for i in range(T):
+        # Process original frame
+        frame = original_frames[0, i].numpy()
+        frame = np.transpose(frame, (1, 2, 0))  # CHW -> HWC
+        frame = (frame * 255).astype(np.uint8)
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-                # Process masks
-                if len(masks_collection[i]) == 0:
-                    out.write(frame)
-                    continue
-                
-                masks = masks_collection[i][0].cpu().squeeze()  # Remove batch dimension
-                num_masks = masks.shape[0]
-                
-                # Create segmentation map
-                seg_map = torch.argmax(masks, dim=0).numpy().astype(np.uint8)
-                
-                # Upscale to original resolution
-                if (scale_factor_h > 1) or (scale_factor_w > 1):
-                    seg_map = cv2.resize(seg_map, (w, h), interpolation=cv2.INTER_NEAREST)
-                
-                # Apply color map
-                color_map = cv2.applyColorMap((seg_map * (255 // max(num_masks, 1))).astype(np.uint8), cv2.COLORMAP_JET)
-                
-                # Overlay on original frame
-                overlay = cv2.addWeighted(frame, 0.7, color_map, 0.3, 0)
-                
-                # Write to video
-                out.write(overlay)
+        # Process masks
+        if len(masks_collection[i]) == 0:
+            out.write(frame)
+            continue
+        
+        masks = masks_collection[i][0].cpu().squeeze()  # Remove batch dimension
+        num_masks = masks.shape[0]
+        
+        # Create segmentation map
+        seg_map = torch.argmax(masks, dim=0).numpy().astype(np.uint8)
+        
+        # Upscale to original resolution
+        if (scale_factor_h > 1) or (scale_factor_w > 1):
+            seg_map = cv2.resize(seg_map, (w, h), interpolation=cv2.INTER_NEAREST)
+        
+        # Apply color map
+        color_map = cv2.applyColorMap((seg_map * (255 // max(num_masks, 1))).astype(np.uint8), cv2.COLORMAP_JET)
+        
+        # Overlay on original frame
+        overlay = cv2.addWeighted(frame, 0.7, color_map, 0.3, 0)
+        
+        # Write to video
+        out.write(overlay)
 
-            out.release()
-            print(f'Saved segmentation video to {video_path}')
+    out.release()
+    print(f'Saved segmentation video to {video_path}')
 
 def main(args):
     epsilon = 1e-5
