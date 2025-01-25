@@ -140,8 +140,8 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
     results = benchmark([gt_dir], [pred_dir])
 
     # J - Jaccard (Region similarity)
-    # JF - Jaccard (Boundary similarity)
-    # F - F-measure
+    # JF - Mean?
+    # F - Boundary F-measure
     J, JF, F = results[:3]
     
     # Lists are returned since benchmark() can handle multiple datasets
