@@ -176,3 +176,4 @@ data/
 results/
 wandb/
 outputs/
+config_local.yaml

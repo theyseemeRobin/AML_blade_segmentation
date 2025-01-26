@@ -21,9 +21,9 @@ def readRGB(sample_dir, resolution):
     if resolution[0] == -1:
         h = (rgb.shape[0] // 8) * 8
         w = (rgb.shape[1] // 8) * 8
-        rgb = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_LINEAR)
+        rgb = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_LANCZOS4)
     else:
-        rgb = cv2.resize(rgb, (resolution[1], resolution[0]), interpolation=cv2.INTER_LINEAR)
+        rgb = cv2.resize(rgb, (resolution[1], resolution[0]), interpolation=cv2.INTER_LANCZOS4)
     
     # Rearrange dimensions and keep as uint8
     return einops.rearrange(rgb, 'h w c -> c h w').astype(np.uint8)

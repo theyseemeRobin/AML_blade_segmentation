@@ -5,11 +5,16 @@ defaults:
 # Training parameters
 batch_size: 2
 lr: 1e-5
+final_lr: 1e-6
 decay_rate: 0.5
 loss_scale: 100
 ent_scale: 1.0
 cons_scale: 1.0
 grad_iter: 0
+
+# 4X reduction compared to gt
+rgb_x: 120
+rgb_y: 213
 
 # Evaluation parameters
 ratio: 10
