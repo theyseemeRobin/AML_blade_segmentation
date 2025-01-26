@@ -9,6 +9,7 @@ import gc
 import src.utils as ut
 import src.config as cg
 from src.model.model_cluster import AttEncoder
+from src.losses import val_loss
 import PIL.Image as Image
 
 import torch
@@ -103,7 +104,9 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
         )
         
         print(' --> running inference')
-        for val_sample in tqdm(val_loader, desc='evaluating video sequences'):
+        mean_slot_loss = 0
+        mean_motion_loss = 0
+        for sample_idx, val_sample in enumerate(tqdm(val_loader, desc='evaluating video sequences')):
             rgbs, category, val_idx = val_sample
             print(f'-----------process {category} sequence in one shot-------')
             rgbs = rgbs.float().to(device)  # b t c h w
@@ -115,6 +118,9 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             masks_collection = {}
             for i in range(T):
                 masks_collection[i] = []
+            slot_loss, motion_loss = val_loss(model, rgbs, num_frames=args.num_frames, gap=args.gap)
+            mean_slot_loss = mean_slot_loss - (mean_slot_loss - slot_loss) / (sample_idx + 1)
+            mean_motion_loss = mean_motion_loss - (mean_motion_loss - motion_loss) / (sample_idx + 1)
             masks_collection = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
             torch.save(masks_collection, save_path+'/%s.pth' % category[0])
             
@@ -144,7 +150,7 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
     J, JF, F = results[:3]
     
     # Lists are returned since benchmark() can handle multiple datasets
-    return J[0], JF[0], F[0]
+    return J[0], JF[0], F[0], mean_slot_loss, mean_motion_loss
             
 def load_davis_palette(palette_path):
     """Load DAVIS palette from text file"""
