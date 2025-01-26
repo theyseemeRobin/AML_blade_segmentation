@@ -2,7 +2,7 @@
 
 ## Usage
 
-Install the required packages, torch should be installed separately:
+Install the required packages, torch and xformers should be installed separately:
 
 ```bash
 pip install -r requirements.txt
