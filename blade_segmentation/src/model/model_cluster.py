@@ -50,7 +50,7 @@ class AttEncoder(nn.Module):
         ## input: 'image' has shape B, T, C, H, W  
         ## output: 'attn_dino' has shape BT, HW, HW, 'attn_temporal' has shape B, THW, THW
         
-        with autocast(self.device):
+        with autocast(self.device, dtype=torch.float16):
             # ViT encoder
             bs = image.shape[0]
             image_t = einops.rearrange(image, 'b t c h w -> (b t) c h w')

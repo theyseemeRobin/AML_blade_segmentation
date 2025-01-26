@@ -9,25 +9,24 @@ import glob as gb
 from torch.utils.data import Dataset
 
 def readRGB(sample_dir, resolution):
-    rgb = cv2.imread(sample_dir)
+    """Load and process RGB images with memory optimization"""
+    rgb = cv2.imread(sample_dir, cv2.IMREAD_COLOR)
     try:
         rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
-    except:
-        print(sample_dir)
-    rgb = rgb / 255
+    except Exception as e:
+        print(f"Error processing {sample_dir}: {str(e)}")
+        raise
+    
+    # Resize with preserved aspect ratio
     if resolution[0] == -1:
         h = (rgb.shape[0] // 8) * 8
         w = (rgb.shape[1] // 8) * 8
         rgb = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_LINEAR)
     else:
         rgb = cv2.resize(rgb, (resolution[1], resolution[0]), interpolation=cv2.INTER_LINEAR)
-    return einops.rearrange(rgb, 'h w c -> c h w')
-
-def readSeg(sample_dir, resolution=None):
-    gt = cv2.imread(sample_dir) / 255
-    if resolution:
-        gt = cv2.resize(gt, (resolution[1], resolution[0]), interpolation=cv2.INTER_NEAREST)
-    return einops.rearrange(gt, 'h w c -> c h w')
+    
+    # Rearrange dimensions and keep as uint8
+    return einops.rearrange(rgb, 'h w c -> c h w').astype(np.uint8)
 
     
 class Dataloader(Dataset):
@@ -96,7 +95,5 @@ class Dataloader(Dataset):
                 rgb_dirs = [os.path.join(self.data_dir[1], seq_name, str(i).zfill(5)+'.jpg') for i in range(tot-1)]
                 gt_dirs = [os.path.join(self.data_dir[2], seq_name, str(i).zfill(5)+'.png') for i in range(tot-1)]
                 rgbs = np.stack([readRGB(rgb_dir, self.resolution) for rgb_dir in rgb_dirs], axis=0)
-                
-                # gts = np.stack([readSeg(gt_dir) for gt_dir in gt_dirs], axis=0)
                 return rgbs, seq_name, [i for i in range(tot-1)]
                 

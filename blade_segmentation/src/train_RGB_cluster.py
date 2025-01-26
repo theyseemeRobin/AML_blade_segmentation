@@ -50,7 +50,7 @@ def train_rgb_cluster(args):
     dino_path = args.dino_path
     num_frames = args.num_frames
     grad_iter = args.grad_iter
-    args.resolution = (192, 384)
+    args.resolution = (126, 210)
     aug_gpu = Augment_GPU_pre(args)
     
     # setup log and model path, initialize tensorboard,
@@ -58,6 +58,7 @@ def train_rgb_cluster(args):
     print(logPath)
 
     trn_dataset, val_dataset, resolution, _ = cg.setup_dataset(args)
+
     
     if True:  # args.distributed:
         num_tasks = ut.get_world_size()
@@ -79,7 +80,7 @@ def train_rgb_cluster(args):
     trn_loader = ut.FastDataLoader(
         trn_dataset,
         sampler=sampler_train,
-        num_workers=8,
+        num_workers=1,
         batch_size=batch_size,
         pin_memory=True,
         drop_last=False, # We have too few samples to drop any
