@@ -168,11 +168,11 @@ def train_rgb_cluster(args):
     iter_per_epoch = int(10000 // (num_tasks * args.batch_size))
     
     # Compile the model
-    # try:
-    #     print("Compiling model for faster training...")
-    #     model = torch.compile(model)
-    # except Exception as e:
-    #     print(f"Model compilation failed (requires PyTorch 2.0+): {e}")
+    try:
+        print("Compiling model for faster training...")
+        model = torch.compile(model)
+    except Exception as e:
+        print(f"Model compilation failed (requires PyTorch 2.0+): {e}")
     
     
     for epoch in tqdm(range(args.num_epochs), desc='epochs'):
