@@ -50,7 +50,7 @@ def train_rgb_cluster(args):
     dino_path = args.dino_path
     num_frames = args.num_frames
     grad_iter = args.grad_iter
-    args.resolution = (126, 210)
+    args.resolution = (args.rgb_x, args.rgb_y)
     aug_gpu = Augment_GPU_pre(args)
     
     # setup log and model path, initialize tensorboard,
@@ -80,7 +80,7 @@ def train_rgb_cluster(args):
     trn_loader = ut.FastDataLoader(
         trn_dataset,
         sampler=sampler_train,
-        num_workers=1,
+        num_workers=8,
         batch_size=batch_size,
         pin_memory=True,
         drop_last=False, # We have too few samples to drop any
@@ -96,7 +96,14 @@ def train_rgb_cluster(args):
         drop_last=False
     )
         
-    model = AttEncoder(resolution=resolution, num_t=num_t, num_frames=num_frames, dino_path=dino_path)
+    model = AttEncoder(
+        resolution=resolution,
+        num_t=num_t,
+        num_frames=num_frames,
+        dino_path=dino_path,
+        path_drop=args.path_drop,
+        attn_drop_t=args.attn_drop_t
+    )
     
     model.to(device)
     model_without_ddp = model
@@ -142,7 +149,7 @@ def train_rgb_cluster(args):
         assert len(schedule) == epochs * niter_per_ep
         return schedule
     
-    lr_scheduler = cosine_scheduler(lr, 1e-6, args.num_epochs, len(trn_loader), 0)
+    lr_scheduler = cosine_scheduler(lr, args.final_lr, args.num_epochs, len(trn_loader), 0)
     wd_scheduler = cosine_scheduler(0.1, 0.1, args.num_epochs, len(trn_loader))
     
     if resume_path:
