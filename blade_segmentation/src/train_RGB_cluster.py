@@ -151,10 +151,6 @@ def train_rgb_cluster(args):
         model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         del checkpoint
 
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module
-
     # NOTE (Robin): model did not have a `module` attribute so I changed `model.module.encoder...` to `model.encoder...`
     #               did this for the other model.module calls too.
     for name, p in model.encoder.named_parameters():
