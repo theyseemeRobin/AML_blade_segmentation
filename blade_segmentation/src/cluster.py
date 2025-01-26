@@ -3,7 +3,7 @@ import einops
 from tqdm import tqdm
 import faiss
 import numpy as np
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import DBSCAN, SpectralClustering
 
 def kl_distance(final_set, attn):
     ## kl divergence between two distributions

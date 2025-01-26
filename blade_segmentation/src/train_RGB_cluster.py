@@ -255,7 +255,9 @@ def train_rgb_cluster(args):
             # Garbage collection
             gc.collect()
             
+            model.eval()
             J, JF, F = eval(val_loader, model, device, args, save_path=resultsPath, train=True)
+            model.train()
             
             # Log in wandb
             wandb.log(

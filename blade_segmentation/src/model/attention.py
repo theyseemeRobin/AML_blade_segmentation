@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import einops
 import torch.nn.functional as F
-import xformers.ops as xops
-
 
 class Mlp(nn.Module):
     """ MLP as used in Vision Transformer, MLP-Mixer and related networks
@@ -46,32 +44,14 @@ class Attention(nn.Module):
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
 
-        # Reshape for xformers: [batch, heads, seq_len, dim]
-        q = q.contiguous()
-        k = k.contiguous()
-        v = v.contiguous()
-
-        # Use xformers memory efficient attention
-        attn = xops.memory_efficient_attention(
-            q, k, v,
-            scale=self.scale,
-        )
-        
-        # Apply attention dropout
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        # Reshape back to original format
-        x = attn.transpose(1, 2).reshape(B, N, C)
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-        
-        # Compute attention weights for visualization if needed
-        with torch.no_grad():
-            attn_weights = (q @ k.transpose(-2, -1)) * self.scale
-            attn_weights = attn_weights.softmax(dim=-1)
-        
-        return x, attn_weights
-
+        return x, attn
 
 
 class Block(nn.Module):
