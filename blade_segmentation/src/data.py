@@ -82,16 +82,14 @@ class Dataloader(Dataset):
                 gt_dirs = sorted([gt for gt in gt_dirs if gt.endswith(".png")])
                 val_idx = [int(x[:-4])-int(gt_dirs[0][:-4]) for x in gt_dirs if x.endswith(".png")]
                 gt_dirs = [os.path.join(self.data_dir[2], seq_name, x) for x in gt_dirs if x.endswith(".png")]  
-                gts = np.stack([readSeg(gt_dir) for gt_dir in gt_dirs], axis=0)
-                return rgbs, gts, seq_name, val_idx
+                return rgbs, seq_name, val_idx
             elif self.dataset == 'turbines_O':
                 seq_name = self.seq[idx]
                 tot = len(glob.glob(os.path.join(self.data_dir[1], seq_name, '*')))
                 rgb_dirs = [os.path.join(self.data_dir[1], seq_name, f'{seq_name.zfill(2)}_{str(i).zfill(5)}.png') for i in range(tot-1)]
                 gt_dirs = [os.path.join(self.data_dir[2], seq_name, f'{seq_name.zfill(2)}_{str(i).zfill(5)}.png') for i in range(tot-1)]
                 rgbs = np.stack([readRGB(rgb_dir, self.resolution) for rgb_dir in rgb_dirs], axis=0)
-                gts = np.stack([readSeg(gt_dir) for gt_dir in gt_dirs], axis=0)
-                return rgbs, gts, seq_name, [i for i in range(tot-1)]
+                return rgbs, seq_name, [i for i in range(tot-1)]
             else:
                 seq_name = self.seq[idx]
                 tot = len(glob.glob(os.path.join(self.data_dir[1], seq_name, '*')))
@@ -99,6 +97,6 @@ class Dataloader(Dataset):
                 gt_dirs = [os.path.join(self.data_dir[2], seq_name, str(i).zfill(5)+'.png') for i in range(tot-1)]
                 rgbs = np.stack([readRGB(rgb_dir, self.resolution) for rgb_dir in rgb_dirs], axis=0)
                 
-                gts = np.stack([readSeg(gt_dir) for gt_dir in gt_dirs], axis=0)
-                return rgbs, gts, seq_name, [i for i in range(tot-1)]
+                # gts = np.stack([readSeg(gt_dir) for gt_dir in gt_dirs], axis=0)
+                return rgbs, seq_name, [i for i in range(tot-1)]
                 

@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 from src.cluster import mem_efficient_hierarchical_cluster, kmeans_cluster, sklearn_dbscan_cluster
 
-def mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device):
+def mem_efficient_inference(masks_collection, rgbs, model, T, args, device):
     
     ratio = args.ratio
     
@@ -104,19 +104,18 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
         
         print(' --> running inference')
         for val_sample in tqdm(val_loader, desc='evaluating video sequences'):
-            rgbs, gts, category, val_idx = val_sample
+            rgbs, category, val_idx = val_sample
             print(f'-----------process {category} sequence in one shot-------')
             rgbs = rgbs.float().to(device)  # b t c h w
             
             # Normalize through video-sequential
             rgbs = normalize_video(rgbs)
-            gts = gts.float().to(device)  # b t c h w
             T = rgbs.shape[1]
             print("Number of frames: ", T)
             masks_collection = {}
             for i in range(T):
                 masks_collection[i] = []
-            masks_collection = mem_efficient_inference(masks_collection, rgbs, gts, model, T, args, device)
+            masks_collection = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
             torch.save(masks_collection, save_path+'/%s.pth' % category[0])
             
             # Prepare original frames
