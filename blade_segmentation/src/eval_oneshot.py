@@ -121,36 +121,41 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             slot_loss, motion_loss = val_loss(model, rgbs, num_frames=args.num_frames, gap=args.gap)
             mean_slot_loss = mean_slot_loss - (mean_slot_loss - slot_loss) / (sample_idx + 1)
             mean_motion_loss = mean_motion_loss - (mean_motion_loss - motion_loss) / (sample_idx + 1)
-            masks_collection = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
-            torch.save(masks_collection, save_path+'/%s.pth' % category[0])
             
-            # Prepare original frames
-            original_frames = denormalize_video(rgbs).cpu()
-            
-            # Resolution of windmill format
-            original_resolution = (args.gt_x, args.gt_y)
-            save_davis_masks(masks_collection, category, save_path, original_resolution, T)
-            
-            # Create segmentation video
-            if args.save_video:
-                create_segmentation_video(original_frames, masks_collection, category, save_path, T)
+            if args.clustering_algorithm:
+                masks_collection = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
+                torch.save(masks_collection, save_path+'/%s.pth' % category[0])
+                
+                # Prepare original frames
+                original_frames = denormalize_video(rgbs).cpu()
+                
+                # Resolution of windmill format
+                original_resolution = (args.gt_x, args.gt_y)
+                save_davis_masks(masks_collection, category, save_path, original_resolution, T)
+                
+                # Create segmentation video
+                if args.save_video:
+                    create_segmentation_video(original_frames, masks_collection, category, save_path, T)
     
     gt_subdir = 'DAVIS_Masks' # For the test set
     if train:
         gt_subdir = 'val/DAVIS_Masks'
         gt_dir = os.path.join(args.basepath, gt_subdir)
-        
+    
     pred_dir = os.path.join(save_path, 'Annotations') # Might need to change this during testing
     
-    results = benchmark([gt_dir], [pred_dir])
+    J, JF, F = 0, 0, 0
+    if args.clustering_algorithm:
+        results = benchmark([gt_dir], [pred_dir])
 
-    # J - Jaccard (Region similarity)
-    # JF - Mean?
-    # F - Boundary F-measure
-    J, JF, F = results[:3]
+        # J - Jaccard (Region similarity)
+        # JF - Mean?
+        # F - Boundary F-measure
+        J, JF, F = results[:3]
+        J, JF, F = J[0], JF[0], F[0]
     
     # Lists are returned since benchmark() can handle multiple datasets
-    return J[0], JF[0], F[0], mean_slot_loss, mean_motion_loss
+    return J, JF, F, mean_slot_loss, mean_motion_loss
             
 def load_davis_palette(palette_path):
     """Load DAVIS palette from text file"""
