@@ -68,7 +68,7 @@ def create_train_val_set(data_path='data/optic_thermal'):
             img_source = os.path.join(images_path, main_folder, modality)
             
             # Get sequences
-            sequences = [d for d in os.listdir(img_source) if os.path.isdir(os.path.join(img_source, d))]
+            sequences = sorted([d for d in os.listdir(img_source) if os.path.isdir(os.path.join(img_source, d))])
             
             # Calculate split
             split_idx = int(len(sequences) * 0.9)
