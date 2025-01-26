@@ -18,7 +18,7 @@ def download_data(data_path='data/optic_thermal'):
     # Check if data_path exists
     if not os.path.exists(data_path):
         os.makedirs(data_path)
-        
+
     dataset_id = os.getenv('DATASET_ID')
 
     # Check if raw_data.zip exists
@@ -94,7 +94,7 @@ def create_train_val_set(data_path='data/optic_thermal'):
         
     print('Train and Val folders created.')
     # Display the number of sequences in the train and val folders
-    for main_folder in ['test-dev', 'trainval']:
+    for main_folder in ['trainval']:
         for modality in ['Optical', 'Thermal']:
             train_path = os.path.join(images_path, main_folder, 'train', modality)
             val_path = os.path.join(images_path, main_folder, 'val', modality)
