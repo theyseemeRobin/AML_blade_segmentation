@@ -24,6 +24,8 @@ def readRGB(sample_dir, resolution):
         rgb = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_LANCZOS4)
     else:
         rgb = cv2.resize(rgb, (resolution[1], resolution[0]), interpolation=cv2.INTER_LANCZOS4)
+        
+    rgb = cv2.bilateralFilter(rgb, d=9, sigmaColor=75, sigmaSpace=75)
     
     # Rearrange dimensions and keep as uint8
     return einops.rearrange(rgb, 'h w c -> c h w').astype(np.uint8)

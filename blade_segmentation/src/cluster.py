@@ -162,6 +162,58 @@ def kmeans_cluster(q, k, scale, args, device='cuda'):
     print('Cluster centroids:', final_centroids.shape)
     return final_mask
 
+def spectral_cluster(q, k, scale, args, device='cuda'):
+    
+    num_clusters = args.num_clusters
+    ts = args.chunk_size
+    chunk_features = []
+    all_indices = []
+    all_assignments = []
+    
+    # Initial clustering phase
+    gen = chunk_generator(q, k, scale, ts, "Initial Spectral Clustering")
+    for sample, indices in gen:
+        sample = sample.cpu().numpy().astype('float32')
+        
+        spectral = SpectralClustering(
+            n_clusters=num_clusters,
+            affinity='rbf',
+        )
+        chunk_labels = spectral.fit_predict(sample)
+        
+        # Store cluster means and assignments
+        for i in range(num_clusters):
+            mask = chunk_labels == i
+            if np.any(mask):
+                cluster_mean = sample[mask].mean(axis=0)
+                chunk_features.append(cluster_mean)
+        
+        all_indices.append(indices)
+        all_assignments.append(chunk_labels)
+    
+    # Refinement phase
+    chunk_features = np.array(chunk_features)
+    spectral_refine = SpectralClustering(
+        n_clusters=num_clusters,
+        affinity='rbf',
+    )
+    refined_labels = spectral_refine.fit_predict(chunk_features)
+    
+    # Create final mask
+    final_mask = torch.zeros(num_clusters, q.shape[0] * q.shape[2]).to(device)
+    feature_idx = 0
+    
+    for chunk_labels, indices in zip(all_assignments, all_indices):
+        for i in range(num_clusters):
+            mask = chunk_labels == i
+            if np.any(mask):
+                cluster_id = refined_labels[feature_idx]
+                final_mask[cluster_id, indices[mask]] = 1
+                feature_idx += 1
+    
+    print('Spectral clustering complete')
+    return final_mask
+
 def sklearn_dbscan_cluster(q, k, scale, args, device='cuda'):
     final_mask = torch.zeros(0, q.shape[0]*q.shape[2], device=device)
     

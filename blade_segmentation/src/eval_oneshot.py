@@ -25,7 +25,7 @@ from kornia.enhance import Denormalize, Normalize
 from vos_benchmark.benchmark import benchmark
 from tqdm import tqdm
 
-from src.cluster import mem_efficient_hierarchical_cluster, kmeans_cluster, sklearn_dbscan_cluster
+from src.cluster import mem_efficient_hierarchical_cluster, kmeans_cluster, spectral_cluster
 
 def mem_efficient_inference(masks_collection, rgbs, model, T, args, device):
     
@@ -66,8 +66,8 @@ def mem_efficient_inference(masks_collection, rgbs, model, T, args, device):
     
     if args.clustering_algorithm == 'kmeans':
         dist = kmeans_cluster(q, k, scale, args, device=device)
-    elif args.clustering_algorithm == 'dbscan':
-        dist = sklearn_dbscan_cluster(q, k, scale, args, device=device)
+    elif args.clustering_algorithm == 'spectral':
+        dist = spectral_cluster(q, k, scale, args, device=device)
     elif args.clustering_algorithm == 'hierarchical':
         dist = mem_efficient_hierarchical_cluster(q, k, scale, args, device=device)
     else:

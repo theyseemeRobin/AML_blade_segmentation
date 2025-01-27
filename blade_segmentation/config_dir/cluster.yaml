@@ -4,7 +4,7 @@ defaults:
 # Training parameters
 clustering_algorithm: "kmeans"
 num_clusters: 2
-n_iter: 40
+n_iter: 2
 
 resume_path: "models/2block-finetune.pth"
 
