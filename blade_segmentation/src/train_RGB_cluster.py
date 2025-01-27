@@ -185,6 +185,32 @@ def train_rgb_cluster(args):
         
         if args.distributed:
             trn_loader.sampler.set_epoch(it//iter_per_epoch)
+            
+        # Evaluate the model, logs results to wandb
+        if (epoch % args.eval_freq == 0):   
+            
+            # Free memory before evaluation
+            torch.cuda.empty_cache()
+            
+            # Garbage collection
+            gc.collect()
+            
+            model.eval()
+            J, JF, F, slot_loss, motion_loss = eval(val_loader, model, device, args, save_path=resultsPath, train=True)
+            loss = (slot_loss + motion_loss) / grad_step
+            model.train()
+            
+            # Log in wandb
+            wandb.log(
+                {'val/J': J,
+                'val/JF': JF,
+                'val/F': F,
+                'val/total_loss': losses['total_loss'],
+                'val/slot_loss': losses['slot_loss'],
+                'val/motion_loss': losses['motion_loss']},
+                step=epoch
+            )
+            
         for sample in trn_loader:
             for i, param_group in enumerate(optimizer.param_groups):
                 if i < 2:
@@ -248,34 +274,6 @@ def train_rgb_cluster(args):
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
                 }, filename)
-        
-        # Evaluate the model, logs results to wandb
-        if (epoch % args.eval_freq == 0):   
-            
-            # Free memory before evaluation
-            torch.cuda.empty_cache()
-            
-            # Delete out of scope variables
-            del slot, motion_mask, rgb, slot_loss, motion_loss
-            
-            # Garbage collection
-            gc.collect()
-            
-            model.eval()
-            J, JF, F, slot_loss, motion_loss = eval(val_loader, model, device, args, save_path=resultsPath, train=True)
-            loss = (slot_loss + motion_loss) / grad_step
-            model.train()
-            
-            # Log in wandb
-            wandb.log(
-                {'val/J': J,
-                'val/JF': JF,
-                'val/F': F,
-                'val/total_loss': losses['total_loss'],
-                'val/slot_loss': losses['slot_loss'],
-                'val/motion_loss': losses['motion_loss']},
-                step=epoch
-            )
             
     
     # Save the final model
