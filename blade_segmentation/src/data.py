@@ -8,7 +8,7 @@ import numpy as np
 import glob as gb
 from torch.utils.data import Dataset
 
-def readRGB(sample_dir, resolution):
+def readRGB(sample_dir, resolution, bg_subtractor=None):
     """Load and process RGB images with memory optimization"""
     rgb = cv2.imread(sample_dir, cv2.IMREAD_COLOR)
     try:
@@ -24,8 +24,17 @@ def readRGB(sample_dir, resolution):
         rgb = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_LANCZOS4)
     else:
         rgb = cv2.resize(rgb, (resolution[1], resolution[0]), interpolation=cv2.INTER_LANCZOS4)
+    
+    if bg_subtractor is not None:
+        # Apply background subtraction
+        fgmask = bg_subtractor.apply(rgb)
         
-    rgb = cv2.bilateralFilter(rgb, d=9, sigmaColor=75, sigmaSpace=75)
+        # Apply mask to original image
+        rgb_masked = rgb.copy()
+        rgb_masked[fgmask == 0] = 0
+        
+        # Apply bilateral filter to reduce noise
+        rgb = cv2.bilateralFilter(rgb_masked, d=9, sigmaColor=75, sigmaSpace=75)
     
     # Rearrange dimensions and keep as uint8
     return einops.rearrange(rgb, 'h w c -> c h w').astype(np.uint8)
@@ -40,6 +49,7 @@ class Dataloader(Dataset):
         self.gap = gap
         self.resolution = resolution
         self.seq_length = seq_length
+        self.bg_subtractor = None
         if train:
             self.train = train
             # self.img_dir = '/path/to/ytvis/train'
@@ -55,6 +65,9 @@ class Dataloader(Dataset):
             return len(self.seq)
 
     def __getitem__(self, idx):
+        
+        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=40, detectShadows=False)
+        
         if self.train:
             seq_name = random.choice(self.seq)
             seq = os.path.join(self.img_dir, seq_name, '*.jpg')
@@ -69,7 +82,7 @@ class Dataloader(Dataset):
             seq_ids = [ind+gap*(i-(self.seq_length//2)) for i in range(self.seq_length)]
 
             rgb_dirs = [imgs[i] for i in seq_ids]
-            rgbs = [readRGB(rgb_dir, self.resolution) for rgb_dir in rgb_dirs]
+            rgbs = [readRGB(rgb_dir, self.resolution, self.bg_subtractor) for rgb_dir in rgb_dirs]
             out_rgb = np.stack(rgbs, 0) ## T, C, H, W 
             return out_rgb
 
@@ -89,13 +102,13 @@ class Dataloader(Dataset):
                 tot = len(glob.glob(os.path.join(self.data_dir[1], seq_name, '*')))
                 rgb_dirs = [os.path.join(self.data_dir[1], seq_name, f'{seq_name.zfill(2)}_{str(i).zfill(5)}.png') for i in range(tot-1)]
                 gt_dirs = [os.path.join(self.data_dir[2], seq_name, f'{seq_name.zfill(2)}_{str(i).zfill(5)}.png') for i in range(tot-1)]
-                rgbs = np.stack([readRGB(rgb_dir, self.resolution) for rgb_dir in rgb_dirs], axis=0)
+                rgbs = np.stack([readRGB(rgb_dir, self.resolution, self.bg_subtractor) for rgb_dir in rgb_dirs], axis=0)
                 return rgbs, seq_name, [i for i in range(tot-1)]
             else:
                 seq_name = self.seq[idx]
                 tot = len(glob.glob(os.path.join(self.data_dir[1], seq_name, '*')))
                 rgb_dirs = [os.path.join(self.data_dir[1], seq_name, str(i).zfill(5)+'.jpg') for i in range(tot-1)]
                 gt_dirs = [os.path.join(self.data_dir[2], seq_name, str(i).zfill(5)+'.png') for i in range(tot-1)]
-                rgbs = np.stack([readRGB(rgb_dir, self.resolution) for rgb_dir in rgb_dirs], axis=0)
+                rgbs = np.stack([readRGB(rgb_dir, self.resolution, self.bg_subtractor) for rgb_dir in rgb_dirs], axis=0)
                 return rgbs, seq_name, [i for i in range(tot-1)]
                 

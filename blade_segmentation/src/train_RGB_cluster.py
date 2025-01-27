@@ -205,9 +205,9 @@ def train_rgb_cluster(args):
                 {'val/J': J,
                 'val/JF': JF,
                 'val/F': F,
-                'val/total_loss': losses['total_loss'],
-                'val/slot_loss': losses['slot_loss'],
-                'val/motion_loss': losses['motion_loss']},
+                'val/total_loss': loss,
+                'val/slot_loss': slot_loss,
+                'val/motion_loss': motion_loss},
                 step=epoch
             )
             

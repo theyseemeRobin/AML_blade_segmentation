@@ -178,36 +178,40 @@ def save_davis_masks(masks_collection, category, save_path, original_resolution,
     """
     Save masks in DAVIS-compatible indexed PNG format
     Each Pixel in the png contains 1 channel with the object ID that starts from 1
+    Background (largest mask) is removed and set to 0
     """
-    # Load palette
     davis_palette = load_davis_palette('config_dir/palette.txt')
-    
-    # Create output directory
     mask_dir = os.path.join(save_path, 'Annotations', category[0])
     os.makedirs(mask_dir, exist_ok=True)
     
-    # Get original dimensions
     h, w = original_resolution
     
-    # Process all frames explicitly
-    for frame_idx in range(T):  # 0-based indexing up to T-1
+    for frame_idx in range(T):
         if frame_idx not in masks_collection or not masks_collection[frame_idx]:
-            # Create empty mask
             mask = np.zeros((h, w), dtype=np.uint8)
         else:
-            # Get mask tensor [num_objects, mask_h, mask_w]
             mask_tensor = masks_collection[frame_idx][0].squeeze().cpu().numpy()
-            
-            # 1. Convert to object IDs using mask dimensions
             object_ids = np.argmax(mask_tensor, axis=0).astype(np.uint8) + 1
             
-            # 2. Upscale to original resolution
-            mask = cv2.resize(object_ids, (w, h), interpolation=cv2.INTER_NEAREST)
+            # Find the background (largest component)
+            unique_ids, counts = np.unique(object_ids, return_counts=True)
+            if len(unique_ids) > 1:  # If we have more than just background
+                background_id = unique_ids[np.argmax(counts)]
+                
+                # Set background to 0 and shift other IDs to maintain consecutive numbering
+                new_ids = np.zeros_like(object_ids)
+                current_new_id = 1
+                for old_id in unique_ids:
+                    if old_id != background_id:
+                        new_ids[object_ids == old_id] = current_new_id
+                        current_new_id += 1
+                
+                object_ids = new_ids
             
-            # 3. Ensure background is 0 and clip values
+            # Upscale to original resolution
+            mask = cv2.resize(object_ids, (w, h), interpolation=cv2.INTER_NEAREST)
             mask = np.clip(mask, 0, 254)
 
-        # Save with palette
         img = Image.fromarray(mask, mode='P')
         img.putpalette(davis_palette)
         frame_path = os.path.join(mask_dir, f"{frame_idx:05d}.png")
@@ -250,7 +254,7 @@ def create_segmentation_video(original_frames, masks_collection, category, save_
     for i in range(T):
         # Process original frame
         frame = original_frames[0, i].numpy()
-        frame = np.transpose(frame, (1, 2, 0))  # CHW -> HWC
+        frame = np.transpose(frame, (1, 2, 0))
         frame = (frame * 255).astype(np.uint8)
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
@@ -259,23 +263,39 @@ def create_segmentation_video(original_frames, masks_collection, category, save_
             out.write(frame)
             continue
         
-        masks = masks_collection[i][0].cpu().squeeze()  # Remove batch dimension
+        masks = masks_collection[i][0].cpu().squeeze()
         num_masks = masks.shape[0]
         
-        # Create segmentation map
+        # Create initial segmentation map
         seg_map = torch.argmax(masks, dim=0).numpy().astype(np.uint8)
+        
+        # Find and remove background (largest component)
+        unique_ids, counts = np.unique(seg_map, return_counts=True)
+        if len(unique_ids) > 1:
+            background_id = unique_ids[np.argmax(counts)]
+            
+            # Create new segmentation map without background
+            new_seg_map = np.zeros_like(seg_map)
+            current_new_id = 1
+            for old_id in unique_ids:
+                if old_id != background_id:
+                    new_seg_map[seg_map == old_id] = current_new_id
+                    current_new_id += 1
+            
+            seg_map = new_seg_map
         
         # Upscale to original resolution
         if (scale_factor_h > 1) or (scale_factor_w > 1):
             seg_map = cv2.resize(seg_map, (w, h), interpolation=cv2.INTER_NEAREST)
         
-        # Apply color map
-        color_map = cv2.applyColorMap((seg_map * (255 // max(num_masks, 1))).astype(np.uint8), cv2.COLORMAP_JET)
+        # Apply color map (adjusted for number of non-background masks)
+        actual_num_masks = len(np.unique(seg_map)) - 1  # subtract 1 to exclude 0
+        if actual_num_masks > 0:
+            color_map = cv2.applyColorMap((seg_map * (255 // max(actual_num_masks, 1))).astype(np.uint8), cv2.COLORMAP_JET)
+            overlay = cv2.addWeighted(frame, 0.4, color_map, 0.3, 0)
+        else:
+            overlay = frame
         
-        # Overlay on original frame
-        overlay = cv2.addWeighted(frame, 0.7, color_map, 0.3, 0)
-        
-        # Write to video
         out.write(overlay)
 
     out.release()
