@@ -5,8 +5,9 @@ defaults:
 clustering_algorithm: "kmeans"
 num_clusters: 2
 n_iter: 2
+tau: 0.3
 
-resume_path: "models/2block-finetune.pth"
+resume_path: "models/2block-finetune-polar-dust.pth"
 
 # Model paths
 basepath: data/optic_thermal/Images/trainval
