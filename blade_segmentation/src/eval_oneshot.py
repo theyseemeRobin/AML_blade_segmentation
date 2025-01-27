@@ -5,6 +5,7 @@ import sys
 import cv2
 import numpy as np
 import gc
+import wandb
 
 import src.utils as ut
 import src.config as cg
@@ -82,7 +83,7 @@ def mem_efficient_inference(masks_collection, rgbs, model, T, args, device):
     print('Total time:', t3-t1)
     return masks_collection
 
-def eval(val_loader, model, device, args, save_path=None, writer=None, train=False):
+def eval(val_loader, model, device, args, save_path=None, writer=None, train=False, skip_loss=False):
     
     with torch.no_grad():
         t = time.time()
@@ -106,6 +107,7 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
         print(' --> running inference')
         mean_slot_loss = 0
         mean_motion_loss = 0
+        
         for sample_idx, val_sample in enumerate(tqdm(val_loader, desc='evaluating video sequences')):
             rgbs, category, val_idx = val_sample
             print(f'-----------process {category} sequence in one shot-------')
@@ -118,7 +120,11 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             masks_collection = {}
             for i in range(T):
                 masks_collection[i] = []
-            slot_loss, motion_loss = val_loss(model, rgbs, num_frames=args.num_frames, gap=args.gap)
+            
+            slot_loss, motion_loss = 0, 0
+            if not skip_loss:
+                slot_loss, motion_loss = val_loss(model, rgbs, num_frames=args.num_frames, gap=args.gap)
+                
             mean_slot_loss = mean_slot_loss - (mean_slot_loss - slot_loss) / (sample_idx + 1)
             mean_motion_loss = mean_motion_loss - (mean_motion_loss - motion_loss) / (sample_idx + 1)
             
@@ -275,47 +281,61 @@ def create_segmentation_video(original_frames, masks_collection, category, save_
     out.release()
     print(f'Saved segmentation video to {video_path}')
 
-def main(args):
-    epsilon = 1e-5
+def train_clusterer(args):
     batch_size = args.batch_size 
     resume_path = args.resume_path
     attn_drop_t = args.attn_drop_t
     path_drop = args.path_drop
     num_t = args.num_t
-    args.resolution = tuple(args.resolution)
+    args.resolution = (args.rgb_x, args.rgb_y)
+    logPath, modelPath, resultsPath = cg.setup_path(args)
 
     # setup log and model path, initialize tensorboard,
     # initialize dataloader
     trn_dataset, val_dataset, resolution, in_out_channels = cg.setup_dataset(args)
     val_loader = ut.FastDataLoader(
-        val_dataset, num_workers=8, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
+        val_dataset, num_workers=1, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=False)
     # initialize model
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    print('======> start inference {}, {}, use {}.'.format(args.dataset, args.verbose, device))
+    print('======> start inference {}, using {}.'.format(args.dataset, device))
 
-    model = AttEncoder(resolution=resolution,
-                        path_drop=path_drop,
-                        attn_drop_t=attn_drop_t,
-                        num_t=num_t)
+    model = AttEncoder(
+        resolution=resolution,
+        path_drop=path_drop,
+        attn_drop_t=attn_drop_t,
+        num_t=num_t,
+        device=device,
+        num_frames=args.num_frames
+    )
+    
     model.to(device)
 
     it = 0
     if resume_path:
         print('resuming from checkpoint')
-        checkpoint = torch.load(resume_path, map_location='cpu')
+        checkpoint = torch.load(resume_path, map_location=device)
         state_dict = checkpoint['model_state_dict']
         model.load_state_dict(state_dict)
         it = checkpoint['iteration']
         loss = checkpoint['loss']
         model.eval()
     else:
-        print('no checkpouint found')
+        print('no checkpoint found')
         sys.exit(0)
 
-    if not os.path.exists(args.save_path):
-        os.mkdir(args.save_path)
-    eval(val_loader, model, device, args.ratio, args.tau, save_path=args.save_path, train=False)
+    if not os.path.exists(resultsPath):
+        os.mkdir(resultsPath)
+        
+    J, JF, F, _, _ = eval(val_loader, model, device, args, save_path=resultsPath, train=True, skip_loss=True)
+    wandb.init(project='aml-blade-clustering', config=args)
+    
+    # Log metrics
+    wandb.log({
+        'Region Similarity': J,
+        'Mean': JF,
+        'Boundary F Measure': F,
+    })
     
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -348,4 +368,4 @@ if __name__ == "__main__":
     parser.add_argument('--device', default='cuda', help='device to use for training / testing')
 
     args = parser.parse_args()
-    main(args)
+    train_clusterer(args)
