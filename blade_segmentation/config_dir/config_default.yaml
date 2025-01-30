@@ -23,6 +23,8 @@ clustering_algorithm: "kmeans" # dbscan, kmeans or hierarchical
 gt_x: 480
 gt_y: 852
 save_video: true
+save_attention_slice: false
+n_attention_slices: 1
 
 # Hierarchical clustering parameters
 tau: 1

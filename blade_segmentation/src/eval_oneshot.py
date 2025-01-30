@@ -142,6 +142,9 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
                 # Create segmentation video
                 if args.save_video:
                     create_segmentation_video(original_frames, masks_collection, category, save_path, T)
+
+            if args.save_attention_slice:
+                create_attention_figure(model, rgbs, args.gap, T, args.n_attention_slices)
     
     gt_subdir = 'DAVIS_Masks' # For the test set
     if train:
@@ -218,7 +221,8 @@ def save_davis_masks(masks_collection, category, save_path, original_resolution,
         img.save(frame_path, format='PNG', transparency=254, compress_level=0)
     
     print(f'Saved DAVIS masks to {mask_dir}')
-            
+
+
 def create_segmentation_video(original_frames, masks_collection, category, save_path, T):
     """
     Creates a video visualization of segmentation masks overlaid on original frames.
@@ -300,6 +304,26 @@ def create_segmentation_video(original_frames, masks_collection, category, save_
 
     out.release()
     print(f'Saved segmentation video to {video_path}')
+
+
+def create_attention_figure(model, rgbs, gap, num_frames, num_figures=1):
+    with torch.no_grad():
+        n_steps = rgbs.shape[1] - (num_frames-1)*gap
+        with tqdm(total=n_steps, desc='Validating') as pbar:
+            for i in range(0, min(num_figures, rgbs.shape[1])):
+                indices = torch.arange(i, i+num_frames*gap, gap)
+                if indices[-1] >= rgbs.shape[1]:
+                    break
+                rgb_frames = rgbs[:, indices]
+                _, _, attention_map, _, _ = model(rgb_frames, training=True)
+                # reshape attention mask to (THW,THW)
+                # Select a 'query' point in the spatio-temporal by finding the maximum value in the attention mask
+                # to obtain a THW attention map from the query to all
+                # other points in the spatio-temporal domain
+                # for each step in the temporal dimension T get an image of the HW slice.
+                # add a dot indicating the location of the prompt, and save all T attention maps.
+
+
 
 def train_clusterer(args):
     batch_size = args.batch_size 
