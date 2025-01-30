@@ -66,7 +66,7 @@ class Dataloader(Dataset):
 
     def __getitem__(self, idx):
         
-        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=40, detectShadows=False)
+        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=36, detectShadows=False)
         
         if self.train:
             seq_name = random.choice(self.seq)
