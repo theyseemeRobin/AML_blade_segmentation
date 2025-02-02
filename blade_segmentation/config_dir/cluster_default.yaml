@@ -40,6 +40,8 @@ resume_path: null
 
 save_attention_slice: false
 n_attention_slices: 1
+use_bgs: false
+train: true
 
 # System settings
 seed: 0

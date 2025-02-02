@@ -43,6 +43,7 @@ with_rgb: false
 num_frames: 3
 num_t: 1
 gap: 2
+use_bgs: false
 
 # Model paths
 dino_path: models/dino_deitsmall8_pretrain_full_checkpoint.pth

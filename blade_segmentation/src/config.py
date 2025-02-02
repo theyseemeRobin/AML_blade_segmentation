@@ -73,8 +73,14 @@ def setup_dataset(args):
         img_dir = basepath + '/train/Optical'
         gt_dir = basepath + '/train/Masks_Optical' # This does not exist
         
-        val_gt_dir = basepath + '/val/Masks_Optical'                      # NOTE (Robin): Annotations do not exist at the moment
+        val_gt_dir = basepath + '/val/Masks_Optical'     
         val_img_dir = basepath + '/val/Optical'
+        
+        # Simple hack
+        if 'test' in basepath:
+            val_gt_dir = basepath + '/Masks_Optical'
+            val_img_dir = basepath + '/Optical'
+        
         val_seq = os.listdir(val_img_dir)
         
         val_data_dir = [val_img_dir, val_img_dir, val_gt_dir]
@@ -89,7 +95,8 @@ def setup_dataset(args):
         resolution=resolution,
         gap=args.gap,
         seq_length=args.num_frames,
-        train=True
+        train=True,
+        use_bgs=args.use_bgs
     )
     val_dataset = Dataloader(
         data_dir=val_data_dir,
@@ -98,7 +105,8 @@ def setup_dataset(args):
         gap=args.gap,
         train=False,
         seq_length=args.num_frames,
-        val_seq=val_seq
+        val_seq=val_seq,
+        use_bgs=args.use_bgs
     )
     in_out_channels = 3
     

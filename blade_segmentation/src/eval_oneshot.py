@@ -86,6 +86,57 @@ def mem_efficient_inference(masks_collection, rgbs, model, T, args, device):
     fps = T / (t3 - t1)
     return masks_collection, fps
 
+def bgs_inference(masks_collection, rgbs, T, args, device):
+    """Background subtraction based inference using pre-processed frames"""
+    t1 = time.time()
+    
+    # Process each frame
+    for i in range(T):
+        # Extract frame and convert to uint8
+        frame = rgbs[0, i].cpu().numpy()  # Remove batch dim
+        frame = np.transpose(frame, (1, 2, 0))
+        frame = (frame * 255).astype(np.uint8)
+        
+        # Create binary mask (assuming frame is already background subtracted)
+        binary_mask = (frame.mean(axis=2) > 128).astype(np.uint8)
+        
+        # Find connected components
+        num_labels, labels = cv2.connectedComponents(binary_mask)
+        
+        if num_labels > 1:  # If we found any components
+            # Find and remove background (largest component)
+            unique_ids, counts = np.unique(labels, return_counts=True)
+            background_id = unique_ids[np.argmax(counts)]
+            
+            # Create new labels without background
+            new_labels = np.zeros_like(labels)
+            current_new_id = 1
+            for old_id in unique_ids:
+                if old_id != background_id:
+                    new_labels[labels == old_id] = current_new_id
+                    current_new_id += 1
+            
+            # Convert to one-hot encoding
+            num_objects = len(unique_ids) - 1  # Subtract background
+            h, w = new_labels.shape
+            one_hot = np.zeros((num_objects + 1, h, w))
+            for j in range(num_objects + 1):
+                one_hot[j] = (new_labels == j)
+            
+            # Convert to tensor and add to collection
+            mask_tensor = torch.from_numpy(one_hot).float().unsqueeze(0)
+            masks_collection[i].append(mask_tensor.to(device))
+        else:
+            # If no components found, add empty mask
+            h, w = binary_mask.shape
+            empty_mask = torch.zeros((1, 1, h, w)).to(device)
+            masks_collection[i].append(empty_mask)
+    
+    t2 = time.time()
+    fps = T / (t2 - t1)
+    
+    return masks_collection, fps
+
 def eval(val_loader, model, device, args, save_path=None, writer=None, train=False, skip_loss=False):
     
     with torch.no_grad():
@@ -133,8 +184,11 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             mean_motion_loss = mean_motion_loss - (mean_motion_loss - motion_loss) / (sample_idx + 1)
             
             if args.clustering_algorithm:
-                masks_collection, fps = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
-                torch.save(masks_collection, save_path+'/%s.pth' % category[0])
+                
+                if args.clustering_algorithm != 'bgs':
+                    masks_collection, fps = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
+                else:
+                    masks_collection, fps = bgs_inference(masks_collection, rgbs, T, args, device)
                 
                 fps_list.append(fps)
                 
@@ -155,7 +209,8 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
     gt_subdir = 'DAVIS_Masks' # For the test set
     if train:
         gt_subdir = 'val/DAVIS_Masks'
-        gt_dir = os.path.join(args.basepath, gt_subdir)
+        
+    gt_dir = os.path.join(args.basepath, gt_subdir)
     
     pred_dir = os.path.join(save_path, 'Annotations') # Might need to change this during testing
     
@@ -377,9 +432,10 @@ def train_clusterer(args):
 
     if not os.path.exists(resultsPath):
         os.mkdir(resultsPath)
-        
-    J, JF, F, _, _, fps = eval(val_loader, model, device, args, save_path=resultsPath, train=True, skip_loss=True)
-    wandb.init(project='aml-blade-clustering', config=args)
+
+    print(args.train)
+    J, JF, F, _, _, fps = eval(val_loader, model, device, args, save_path=resultsPath, train=args.train, skip_loss=True)
+    wandb.init(project=args.wandb_project, config=args)
     
     # Log metrics
     wandb.log({

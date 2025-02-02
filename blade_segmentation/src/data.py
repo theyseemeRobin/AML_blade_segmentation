@@ -41,7 +41,7 @@ def readRGB(sample_dir, resolution, bg_subtractor=None):
 
     
 class Dataloader(Dataset):
-    def __init__(self, data_dir, resolution, dataset, seq_length=3, gap=4, train=True, val_seq=None):
+    def __init__(self, data_dir, resolution, dataset, seq_length=3, gap=4, train=True, val_seq=None, use_bgs=False):
         self.dataset = dataset
         self.eval = eval
         self.data_dir = data_dir
@@ -50,6 +50,7 @@ class Dataloader(Dataset):
         self.resolution = resolution
         self.seq_length = seq_length
         self.bg_subtractor = None
+        self.use_bgs = use_bgs
         if train:
             self.train = train
             # self.img_dir = '/path/to/ytvis/train'
@@ -66,7 +67,8 @@ class Dataloader(Dataset):
 
     def __getitem__(self, idx):
         
-        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=36, detectShadows=False)
+        if self.use_bgs:
+            self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=36, detectShadows=False)
         
         if self.train:
             seq_name = random.choice(self.seq)

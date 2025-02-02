@@ -286,8 +286,7 @@ def train_rgb_cluster(args):
         'loss': loss,
         }, filename)
 
-    # Save to wandb, uncommented for now
-    # wandb.save(filename)
+    wandb.save(filename)
 
 def train_rgb_cluster_parse_args():
     parser = ArgumentParser()

@@ -2,7 +2,7 @@ defaults:
   - config_default
 
 # Training parameters
-num_epochs: 100
+num_epochs: 200
 
 # Log settings
 log_freq: 10
