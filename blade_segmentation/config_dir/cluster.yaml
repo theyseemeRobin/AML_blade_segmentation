@@ -4,7 +4,7 @@ defaults:
 # Training parameters
 clustering_algorithm: "kmeans"
 num_clusters: 2
-n_iter: 2
+n_iter: 8
 tau: 0.3
 
 resume_path: "models/2block-finetune-polar-dust.pth"
@@ -16,6 +16,7 @@ output_path: results
 attn_drop_t: 0.4
 path_drop: 0.2
 num_t: 2
+
 
 # System settings
 wandb_online: true

@@ -15,3 +15,4 @@ output_path: results
 
 # System settings
 wandb_online: false
+wandb_project: "blade_segmentation"

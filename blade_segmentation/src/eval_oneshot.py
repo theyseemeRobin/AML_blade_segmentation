@@ -81,7 +81,10 @@ def mem_efficient_inference(masks_collection, rgbs, model, T, args, device):
     t3 = time.time()
     print('Attention map, clustering time:', t2-t1, t3-t2)
     print('Total time:', t3-t1)
-    return masks_collection
+    
+    # Frames per second
+    fps = T / (t3 - t1)
+    return masks_collection, fps
 
 def eval(val_loader, model, device, args, save_path=None, writer=None, train=False, skip_loss=False):
     
@@ -108,6 +111,7 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
         mean_slot_loss = 0
         mean_motion_loss = 0
         
+        fps_list = []
         for sample_idx, val_sample in enumerate(tqdm(val_loader, desc='evaluating video sequences')):
             rgbs, category, val_idx = val_sample
             print(f'-----------process {category} sequence in one shot-------')
@@ -129,8 +133,10 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
             mean_motion_loss = mean_motion_loss - (mean_motion_loss - motion_loss) / (sample_idx + 1)
             
             if args.clustering_algorithm:
-                masks_collection = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
+                masks_collection, fps = mem_efficient_inference(masks_collection, rgbs, model, T, args, device)
                 torch.save(masks_collection, save_path+'/%s.pth' % category[0])
+                
+                fps_list.append(fps)
                 
                 # Prepare original frames
                 original_frames = denormalize_video(rgbs).cpu()
@@ -153,6 +159,7 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
     
     pred_dir = os.path.join(save_path, 'Annotations') # Might need to change this during testing
     
+    avg_fps = sum(fps_list) / len(fps_list)
     J, JF, F = 0, 0, 0
     if args.clustering_algorithm:
         results = benchmark([gt_dir], [pred_dir])
@@ -164,7 +171,7 @@ def eval(val_loader, model, device, args, save_path=None, writer=None, train=Fal
         J, JF, F = J[0], JF[0], F[0]
     
     # Lists are returned since benchmark() can handle multiple datasets
-    return J, JF, F, mean_slot_loss, mean_motion_loss
+    return J, JF, F, mean_slot_loss, mean_motion_loss, avg_fps
             
 def load_davis_palette(palette_path):
     """Load DAVIS palette from text file"""
@@ -371,7 +378,7 @@ def train_clusterer(args):
     if not os.path.exists(resultsPath):
         os.mkdir(resultsPath)
         
-    J, JF, F, _, _ = eval(val_loader, model, device, args, save_path=resultsPath, train=True, skip_loss=True)
+    J, JF, F, _, _, fps = eval(val_loader, model, device, args, save_path=resultsPath, train=True, skip_loss=True)
     wandb.init(project='aml-blade-clustering', config=args)
     
     # Log metrics
@@ -379,6 +386,7 @@ def train_clusterer(args):
         'Region Similarity': J,
         'Mean': JF,
         'Boundary F Measure': F,
+        'Frames per Second': fps
     })
     
 if __name__ == "__main__":

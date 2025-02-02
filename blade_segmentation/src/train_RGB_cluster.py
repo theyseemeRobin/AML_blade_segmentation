@@ -71,7 +71,7 @@ def train_rgb_cluster(args):
         print("Sampler_train = %s" % str(sampler_train))
 
     wandb.init(
-        project='aml-blade-segmentation',
+        project=args.wandb_project,
         config=args,
         mode='online' if args.wandb_online else 'offline'
     )
@@ -196,7 +196,7 @@ def train_rgb_cluster(args):
             gc.collect()
             
             model.eval()
-            J, JF, F, slot_loss, motion_loss = eval(val_loader, model, device, args, save_path=resultsPath, train=True)
+            J, JF, F, slot_loss, motion_loss, fps = eval(val_loader, model, device, args, save_path=resultsPath, train=True)
             loss = (slot_loss + motion_loss) / grad_step
             model.train()
             
@@ -207,7 +207,8 @@ def train_rgb_cluster(args):
                 'val/F': F,
                 'val/total_loss': loss,
                 'val/slot_loss': slot_loss,
-                'val/motion_loss': motion_loss},
+                'val/motion_loss': motion_loss,
+                'val/fps': fps},
                 step=epoch
             )
             
@@ -285,8 +286,8 @@ def train_rgb_cluster(args):
         'loss': loss,
         }, filename)
 
-    # Save to wandb
-    wandb.save(filename)
+    # Save to wandb, uncommented for now
+    # wandb.save(filename)
 
 def train_rgb_cluster_parse_args():
     parser = ArgumentParser()

@@ -38,6 +38,9 @@ gap: 4
 dino_path: models/dino_deitsmall8_pretrain_full_checkpoint.pth
 resume_path: null
 
+save_attention_slice: false
+n_attention_slices: 1
+
 # System settings
 seed: 0
 device: cuda
