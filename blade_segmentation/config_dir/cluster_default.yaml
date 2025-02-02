@@ -1,0 +1,75 @@
+defaults:
+    - override hydra/sweeper: optuna
+    - override hydra/sweeper/sampler: tpe
+
+# Training parameters
+batch_size: 1
+
+# 4X reduction compared to gt
+rgb_x: 120
+rgb_y: 213
+
+# Evaluation parameters
+ratio: 10
+chunk_size: 4 # How many frames to process at once
+clustering_algorithm: "kmeans" # dbscan, kmeans or hierarchical
+gt_x: 480
+gt_y: 852
+save_video: true
+
+# Hierarchical clustering parameters
+tau: 1
+
+# KMeans parameters
+num_clusters: 4
+n_iter: 40 # Currently used for hierarchical clustering too
+
+# It seems like different values are used between training and evaluation
+attn_drop_t: 0.4
+path_drop: 0.2
+
+# Dataset settings
+dataset: turbines_OT
+num_frames: 3
+num_t: 1
+gap: 4
+
+# Model paths
+dino_path: models/dino_deitsmall8_pretrain_full_checkpoint.pth
+resume_path: null
+
+save_attention_slice: false
+n_attention_slices: 1
+use_bgs: false
+train: true
+
+# System settings
+seed: 0
+device: cuda
+
+hydra:
+    run:
+        dir: ${...output_path}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}   # Output directory for the hydra logs
+    sweep:
+        dir: ${...output_path}/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}  # Output directory for the hydra sweep logs
+        subdir: ${hydra.job.num}
+    sweeper:
+        sampler:
+            _target_: optuna.samplers.TPESampler
+            n_startup_trials: 10  # Number of trials to run before using TPE instead of random
+        _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+
+        direction: minimize
+        n_trials: 5
+
+        params:
+            lr: tag(log, interval(1e-6, 1e-2))  # log uniform distribution
+#            decay_rate: interval(0.1, 0.9)      # uniform distribution
+#            batch_size: int(interval(2, 8))     # discrete uniform distribution
+#            num_frames: range(1, 5, 1)          # set
+
+# For more information about the sampler configuration, see the following link:
+# https://optuna.readthedocs.io/en/stable/reference/samplers/generated/optuna.samplers.TPESampler.html
+
+# For more information about the search space configuration, see the following link:
+# https://hydra.cc/docs/plugins/optuna_sweeper/#configuring-through-config-file

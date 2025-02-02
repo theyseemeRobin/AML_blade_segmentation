@@ -1,0 +1,25 @@
+defaults:
+  - cluster_default
+
+# Training parameters
+clustering_algorithm: "kmeans"
+num_clusters: 2
+n_iter: 8
+tau: 1
+use_bgs: true
+
+resume_path: "models/2block-finetune-polar-dust.pth"
+
+# Model paths
+basepath: data/optic_thermal/Images/test-dev
+output_path: results
+
+attn_drop_t: 0.4
+path_drop: 0.2
+num_t: 2
+train: false
+
+
+# System settings
+wandb_online: true
+wandb_project: "blade_segmentation_report"

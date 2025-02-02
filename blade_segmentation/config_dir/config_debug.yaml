@@ -1,0 +1,18 @@
+defaults:
+  - config_default
+
+# Training parameters
+num_epochs: 1
+
+# Log settings
+log_freq: 1
+eval_freq: 1
+save_freq: 100
+
+# Model paths
+basepath: data/optic_thermal/Images/trainval
+output_path: results
+
+# System settings
+wandb_online: false
+wandb_project: "blade_segmentation"

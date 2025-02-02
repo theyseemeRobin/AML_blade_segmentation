@@ -172,3 +172,9 @@ cython_debug/
 
 # Project Specific
 data/
+*.pth
+results/
+wandb/
+outputs/
+config_local.yaml
+config_local_debug.yaml

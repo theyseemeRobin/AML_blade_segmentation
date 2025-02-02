@@ -1,0 +1,17 @@
+defaults:
+  - config_default
+
+# Training parameters
+num_epochs: 200
+
+# Log settings
+log_freq: 10
+eval_freq: 25
+save_freq: 250
+
+# Model paths
+basepath: data/optic_thermal/Images/trainval
+output_path: results
+
+# System settings
+wandb_online: true
